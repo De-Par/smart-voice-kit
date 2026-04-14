@@ -6,19 +6,23 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge)](https://www.python.org/)
 [![faster-whisper](https://img.shields.io/badge/faster--whisper-ASR-16A34A?style=for-the-badge)](https://github.com/SYSTRAN/faster-whisper)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-64748B?style=for-the-badge)](#requirements)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-61718B?style=for-the-badge)](#requirements)
 <br />
 
-[![PySide6](https://img.shields.io/badge/PySide6-Desktop_UI-7C3AED?style=for-the-badge)](https://doc.qt.io/qtforpython-6/)
+[![PySide6](https://img.shields.io/badge/PySide6-Desktop_UI-242378?style=for-the-badge)](https://doc.qt.io/qtforpython-6/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-Web_UI-FF4B4B?style=for-the-badge)](https://docs.streamlit.io/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-HTTP_API-0F766E?style=for-the-badge)](https://fastapi.tiangolo.com/)
-[![Uvicorn](https://img.shields.io/badge/Uvicorn-ASGI_Server-0EA5E9?style=for-the-badge)](https://www.uvicorn.org/)
+[![Uvicorn](https://img.shields.io/badge/Uvicorn-ASGI_Server-9535E9?style=for-the-badge)](https://www.uvicorn.org/)
 
 `record -> save wav -> transcribe -> show text -> save metadata`
 
-Built for [Yandex Education Studcamp](https://education.yandex.ru/studcamp-mipt-cshse).
+Built for [Yandex Education Studcamp](https://education.yandex.ru/studcamp-mipt-cshse)
 
 </div>
+
+<p align="center">
+    <img src="https://raw.githubusercontent.com/De-Par/smart-voice-kit/main/assets/images/demo.png" alt="app screenshot" width="50%">
+</p>
 
 Smart Voice Kit is a clean local foundation for voice UX experiments: desktop capture, offline-capable ASR, structured artifacts, and a codebase that can grow into style-aware speech control and TTS without throwing the architecture away.
 
@@ -41,34 +45,6 @@ pip install -e .
 voice-cli prepare-asr
 voice-desktop
 ```
-
-## Why this project
-
-This repository is aimed at the kind of engineering problems that show up in smart-device and assistant prototyping:
-
-- local inference matters
-- runtime behavior should be predictable
-- UI should stay thin
-- model backends should be replaceable
-- artifacts should be structured and reproducible
-
-The result is a practical voice stack for experiments around device UX, embedded-adjacent tooling, and edge-oriented ML flows.
-
-## Core Workflow
-
-```text
-Record audio
-  -> save WAV
-  -> run local ASR
-  -> show transcript
-  -> persist metadata
-```
-
-Each run is written to `runs/<run_id>/`:
-
-- `input.wav`
-- `transcript.txt`
-- `metadata.json`
 
 ## Feature Map
 
