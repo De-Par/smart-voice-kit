@@ -248,6 +248,25 @@ class VoiceDesktopWindow(QMainWindow):
                 width: 28px;
                 margin-right: 8px;
             }
+            QComboBox QAbstractItemView {
+                background: #ffffff;
+                color: #1f1f1f;
+                border: 1px solid #d9dee7;
+                border-radius: 14px;
+                outline: 0;
+                padding: 6px;
+                selection-background-color: #eaf0f6;
+                selection-color: #111827;
+            }
+            QComboBox QAbstractItemView::item {
+                min-height: 30px;
+                padding: 6px 10px;
+                border-radius: 10px;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background: #f4f7fb;
+                color: #111827;
+            }
             QComboBox:focus, QLineEdit:focus, QPlainTextEdit:focus {
                 border: 1px solid #fc5230;
             }
@@ -399,6 +418,8 @@ class VoiceDesktopWindow(QMainWindow):
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(12)
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 1)
         self.language_input = QLineEdit()
         self.language_input.setPlaceholderText("Language (optional)")
 
@@ -415,9 +436,9 @@ class VoiceDesktopWindow(QMainWindow):
         self.transcribe_button.setObjectName("primaryButton")
 
         grid.addWidget(QLabel("Input device"), 0, 0)
-        grid.addWidget(self.input_device_combo, 0, 1, 1, 3)
+        grid.addWidget(self.input_device_combo, 0, 1)
         grid.addWidget(QLabel("Language"), 1, 0)
-        grid.addWidget(self.language_input, 1, 1, 1, 3)
+        grid.addWidget(self.language_input, 1, 1)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(10)
