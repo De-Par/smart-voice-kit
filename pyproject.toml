@@ -9,20 +9,20 @@ description = "Offline-first voice toolkit for smart-device and local assistant 
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi>=0.115.0",
-  "faster-whisper>=1.1.0",
-  "pydantic>=2.8.0",
-  "PySide6>=6.8.0",
-  "python-multipart>=0.0.9",
-  "rich>=13.7.0",
-  "streamlit>=1.39.0",
-  "typer>=0.12.3",
-  "uvicorn>=0.30.0",
+    "fastapi>=0.115.0",
+    "faster-whisper>=1.1.0",
+    "pydantic>=2.8.0",
+    "PySide6>=6.8.0",
+    "python-multipart>=0.0.9",
+    "rich>=13.7.0",
+    "streamlit>=1.39.0",
+    "typer>=0.12.3",
+    "uvicorn>=0.30.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "ruff>=0.6.0",
+    "ruff>=0.6.0",
 ]
 
 [project.scripts]
@@ -35,13 +35,13 @@ packages = ["app", "core", "services", "schemas"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-  "/app",
-  "/core",
-  "/services",
-  "/schemas",
-  "/README.md",
-  "/config.toml",
-  "/pyproject.toml",
+    "/app",
+    "/core",
+    "/services",
+    "/schemas",
+    "/README.md",
+    "/config.toml",
+    "/pyproject.toml",
 ]
 
 [tool.ruff]
