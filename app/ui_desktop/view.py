@@ -242,16 +242,13 @@ def _build_details_dock(window) -> tuple[QDockWidget, QPlainTextEdit]:
 
     details_title = QLabel("Runtime Details")
     details_title.setObjectName("sectionTitleLabel")
-    details_hint = QLabel("Optional technical details about the model and current audio.")
-    details_hint.setObjectName("subtitleLabel")
 
     details_box = QPlainTextEdit()
     details_box.setObjectName("detailsBox")
     details_box.setReadOnly(True)
     details_box.setMinimumWidth(m.details_min_width)
 
-    details_layout.addWidget(details_title)
-    details_layout.addWidget(details_hint)
+    details_layout.addWidget(details_title, alignment=Qt.AlignCenter)
     details_layout.addWidget(details_box, 1)
     details_dock.setWidget(details_root)
     window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, details_dock)

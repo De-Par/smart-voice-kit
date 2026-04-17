@@ -2,14 +2,14 @@ app_name = "iVoice"
 
 [asr]
 backend = "faster_whisper"
-model_name = "tiny"  # tiny / base / small / ...
+model_name = "base"  # tiny / base / small / ...
 model_path = ""
 device = "auto"
 compute_type = "int8"
 language = ""
 beam_size = 5
-cpu_threads = 0
-num_workers = 1
+cpu_threads = 8  # max num threads for one task
+num_workers = 1  # how many parallel transcription tasks can run
 download_root = "data/models/asr"
 local_files_only = true
 preload_on_startup = false

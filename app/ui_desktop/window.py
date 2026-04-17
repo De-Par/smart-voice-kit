@@ -217,14 +217,14 @@ class VoiceDesktopWindow(QMainWindow):
         )
         if not path:
             return
+        
         self.current_audio_path = Path(path)
         self._record_finalize_path = None
         self._record_finalize_size = None
         self._record_finalize_attempts = 0
         self._update_audio_details(self.current_audio_path)
         self._set_status("Loaded")
-        self._set_play_button_visible(True)
-        self.transcribe_button.setEnabled(True)
+        self._set_controls_enabled(True)
 
     @Slot()
     def transcribe_current_audio(self) -> None:
