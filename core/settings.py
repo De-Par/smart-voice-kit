@@ -3,10 +3,21 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
+from typing import TypeVar
 
-from schemas.config import AppSettings, ASRSettings, StorageSettings
+from schemas.config import (
+    AppSettings,
+    ASRSettings,
+    StorageSettings,
+    TranslationSettings,
+)
 
 DEFAULT_CONFIG_PATH = Path("config.toml")
+ComponentSettingsT = TypeVar(
+    "ComponentSettingsT",
+    ASRSettings,
+    TranslationSettings,
+)
 
 
 def _resolve_storage(base_dir: Path, storage: StorageSettings) -> StorageSettings:
@@ -25,17 +36,24 @@ def _resolve_storage(base_dir: Path, storage: StorageSettings) -> StorageSetting
     )
 
 
-def _resolve_asr_paths(base_dir: Path, asr: ASRSettings) -> ASRSettings:
-    return asr.model_copy(
+def _resolve_component_paths(
+    base_dir: Path,
+    component: ComponentSettingsT,
+) -> ComponentSettingsT:
+    return component.model_copy(
         update={
-            "model_path": (base_dir / asr.model_path).resolve()
-            if asr.model_path is not None and not asr.model_path.is_absolute()
-            else asr.model_path,
-            "download_root": (base_dir / asr.download_root).resolve()
-            if asr.download_root is not None and not asr.download_root.is_absolute()
-            else asr.download_root,
+            "model_path": (base_dir / component.model_path).resolve()
+            if component.model_path is not None and not component.model_path.is_absolute()
+            else component.model_path,
+            "download_root": (base_dir / component.download_root).resolve()
+            if component.download_root is not None and not component.download_root.is_absolute()
+            else component.download_root,
         }
     )
+
+
+def _default_model_root(storage: StorageSettings, task: str, family: str) -> Path:
+    return storage.data_dir / "models" / task / family
 
 
 def load_settings(config_path: str | Path | None = None) -> AppSettings:
@@ -51,7 +69,24 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
 
     settings = AppSettings.model_validate(payload)
     resolved_storage = _resolve_storage(base_dir, settings.storage)
-    resolved_asr = _resolve_asr_paths(base_dir, settings.asr)
+    resolved_asr_base = _resolve_component_paths(base_dir, settings.asr)
+    resolved_translation_base = _resolve_component_paths(base_dir, settings.translation)
+    resolved_asr = resolved_asr_base.model_copy(
+        update={
+            "download_root": resolved_asr_base.download_root
+            or _default_model_root(resolved_storage, "asr", settings.asr.family)
+        }
+    )
+    resolved_translation = resolved_translation_base.model_copy(
+        update={
+            "download_root": resolved_translation_base.download_root
+            or _default_model_root(
+                resolved_storage,
+                "translation",
+                settings.translation.family,
+            )
+        }
+    )
 
     for directory in (
         resolved_storage.runs_dir,
@@ -59,7 +94,14 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
         resolved_storage.samples_dir,
     ):
         directory.mkdir(parents=True, exist_ok=True)
-    if resolved_asr.download_root is not None:
-        resolved_asr.download_root.mkdir(parents=True, exist_ok=True)
+    for component in (resolved_asr, resolved_translation):
+        if component.download_root is not None:
+            component.download_root.mkdir(parents=True, exist_ok=True)
 
-    return settings.model_copy(update={"storage": resolved_storage, "asr": resolved_asr})
+    return settings.model_copy(
+        update={
+            "storage": resolved_storage,
+            "asr": resolved_asr,
+            "translation": resolved_translation,
+        }
+    )

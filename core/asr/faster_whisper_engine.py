@@ -5,14 +5,16 @@ from pathlib import Path
 from time import perf_counter
 
 from core.asr.base import BaseASREngine
-from schemas.runtime import ASRPreparationResult
+from core.language import normalize_language_code
+from schemas.runtime import ModelPreparationResult
 from schemas.transcription import TranscriptionResult, TranscriptionSegment
 
 logger = logging.getLogger(__name__)
 
 
 class FasterWhisperASREngine(BaseASREngine):
-    backend_name = "faster_whisper"
+    family_name = "whisper"
+    provider_name = "faster_whisper"
 
     def __init__(
         self,
@@ -76,18 +78,20 @@ class FasterWhisperASREngine(BaseASREngine):
             except Exception as error:
                 if self.local_files_only:
                     raise RuntimeError(
-                        "Local speech model is not available. Run `voice-cli prepare-asr` once "
-                        "with internet access or set `asr.model_path` to a local converted "
-                        "faster-whisper model directory."
+                        "Local speech model is not available. Run "
+                        "`ivoice-install-model configured` once with internet access or set "
+                        "`asr.model_path` to a local converted faster-whisper model directory."
                     ) from error
                 raise
 
         return self._model
 
-    def prepare(self) -> ASRPreparationResult:
+    def prepare(self) -> ModelPreparationResult:
         self._get_model()
-        return ASRPreparationResult(
-            backend=self.backend_name,
+        return ModelPreparationResult(
+            task="asr",
+            family=self.family_name,
+            provider=self.provider_name,
             model_name=self.model_name,
             model_source=self.model_source,
             download_root=str(self.download_root) if self.download_root is not None else None,
@@ -123,9 +127,10 @@ class FasterWhisperASREngine(BaseASREngine):
 
         return TranscriptionResult(
             transcript=" ".join(text_chunks).strip(),
-            language=getattr(info, "language", None) or language,
+            language=normalize_language_code(getattr(info, "language", None) or language),
             inference_seconds=inference_seconds,
-            asr_backend=self.backend_name,
+            asr_family=self.family_name,
+            asr_provider=self.provider_name,
             model_name=self.model_name,
             segments=segments,
         )

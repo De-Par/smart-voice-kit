@@ -3,15 +3,16 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from schemas.runtime import ASRPreparationResult
+from schemas.runtime import ModelPreparationResult
 from schemas.transcription import TranscriptionResult
 
 
 class BaseASREngine(ABC):
-    backend_name: str
+    family_name: str
+    provider_name: str
     model_name: str
 
-    def prepare(self) -> ASRPreparationResult:
+    def prepare(self) -> ModelPreparationResult:
         """Ensure speech-analysis model assets are available locally for later transcription."""
         raise NotImplementedError
 
