@@ -4,29 +4,19 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from core.language import normalize_language_code
 
-class ASRSettings(BaseModel):
+
+class ModelComponentSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    backend: str = "faster_whisper"
-    model_name: str = "small"
+    family: str
+    provider: str
+    model_name: str
     model_path: Path | None = None
-    device: str = "auto"
-    compute_type: str = "int8"
-    language: str | None = None
-    beam_size: int = Field(default=5, ge=1)
-    cpu_threads: int = Field(default=0, ge=0)
-    num_workers: int = Field(default=1, ge=1)
-    download_root: Path | None = Path("data/models/asr")
+    download_root: Path | None = None
     local_files_only: bool = True
     preload_on_startup: bool = False
-
-    @field_validator("language", mode="before")
-    @classmethod
-    def empty_language_to_none(cls, value: str | None) -> str | None:
-        if value in ("", None):
-            return None
-        return value
 
     @field_validator("model_path", "download_root", mode="before")
     @classmethod
@@ -34,6 +24,47 @@ class ASRSettings(BaseModel):
         if value in ("", None):
             return None
         return Path(value)
+
+
+class ASRSettings(ModelComponentSettings):
+    family: str = "whisper"
+    provider: str = "faster_whisper"
+    model_name: str = "small"
+    device: str = "auto"
+    compute_type: str = "int8"
+    language: str | None = None
+    beam_size: int = Field(default=5, ge=1)
+    cpu_threads: int = Field(default=0, ge=0)
+    num_workers: int = Field(default=1, ge=1)
+    download_root: Path | None = None
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def empty_language_to_none(cls, value: str | None) -> str | None:
+        return normalize_language_code(value)
+
+
+class TranslationSettings(ModelComponentSettings):
+    enabled: bool = True
+    family: str = "m2m100"
+    provider: str = "transformers"
+    model_name: str = "facebook/m2m100_418M"
+    source_language: str | None = None
+    target_language: str = "en"
+    device: str = "auto"
+    cpu_threads: int = Field(default=0, ge=0)
+    max_length: int = Field(default=256, ge=16)
+    download_root: Path | None = None
+
+    @field_validator("source_language", mode="before")
+    @classmethod
+    def empty_source_language_to_none(cls, value: str | None) -> str | None:
+        return normalize_language_code(value)
+
+    @field_validator("target_language", mode="before")
+    @classmethod
+    def normalize_target_language(cls, value: str | None) -> str:
+        return normalize_language_code(value) or "en"
 
 
 class StorageSettings(BaseModel):
@@ -63,6 +94,7 @@ class AppSettings(BaseModel):
 
     app_name: str = "iVoice"
     asr: ASRSettings = ASRSettings()
+    translation: TranslationSettings = TranslationSettings()
     storage: StorageSettings = StorageSettings()
     logging: LoggingSettings = LoggingSettings()
     api: APISettings = APISettings()

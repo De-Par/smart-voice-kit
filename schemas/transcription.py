@@ -19,11 +19,22 @@ class TranscriptionResult(BaseModel):
     transcript: str
     language: str | None = None
     inference_seconds: float = Field(ge=0)
-    asr_backend: str
+    asr_family: str
+    asr_provider: str
     model_name: str
     segments: list[TranscriptionSegment] = Field(default_factory=list)
 
-    # TODO(next): extend with style control hints and speaker metadata.
+
+class TranslationResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    text: str
+    source_language: str | None = None
+    target_language: str = "en"
+    inference_seconds: float = Field(ge=0)
+    translation_family: str
+    translation_provider: str
+    model_name: str
 
 
 class RunMetadata(BaseModel):
@@ -36,9 +47,18 @@ class RunMetadata(BaseModel):
     audio_path: str
     language: str | None = None
     transcript: str
+    transcript_en: str
+    target_language: str = "en"
+    translation_status: str = "disabled"
+    translation_message: str | None = None
     inference_seconds: float = Field(ge=0)
-    asr_backend: str
-    model_name: str
+    asr_family: str
+    asr_provider: str
+    asr_model_name: str
+    translation_family: str | None = None
+    translation_provider: str | None = None
+    translation_model_name: str | None = None
+    translation_inference_seconds: float | None = Field(default=None, ge=0)
 
 
 class TranscriptionRun(BaseModel):
@@ -47,5 +67,6 @@ class TranscriptionRun(BaseModel):
     run_dir: str
     audio_path: str
     transcript_path: str
+    transcript_en_path: str
     metadata_path: str
     metadata: RunMetadata

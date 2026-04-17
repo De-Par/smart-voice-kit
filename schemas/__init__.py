@@ -4,13 +4,16 @@ from schemas.config import (
     ASRSettings,
     LoggingSettings,
     StorageSettings,
+    TranslationSettings,
 )
-from schemas.runtime import ASRPreparationResult
+from schemas.model import ModelDescriptor, ModelRequest
+from schemas.runtime import ASRPreparationResult, ModelPreparationResult, PipelinePreparationResult
 from schemas.transcription import (
     RunMetadata,
     TranscriptionResult,
     TranscriptionRun,
     TranscriptionSegment,
+    TranslationResult,
 )
 
 __all__ = [
@@ -19,8 +22,14 @@ __all__ = [
     "ASRSettings",
     "AppSettings",
     "LoggingSettings",
+    "ModelDescriptor",
+    "ModelRequest",
+    "ModelPreparationResult",
+    "PipelinePreparationResult",
     "RunMetadata",
     "StorageSettings",
+    "TranslationResult",
+    "TranslationSettings",
     "TranscriptionResult",
     "TranscriptionRun",
     "TranscriptionSegment",
