@@ -56,7 +56,7 @@ for arg in "$@"; do
 done
 
 python3 -m venv .venv || return 1
-.venv/bin/python -m pip install --upgrade pip setuptools wheel || return 1
+.venv/bin/python -m pip install --upgrade pip "setuptools<82" wheel || return 1
 
 EXTRAS=""
 case "$PROFILE" in
