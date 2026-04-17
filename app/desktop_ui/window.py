@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.ui_desktop.audio_controller import DesktopAudioController
-from app.ui_desktop.helpers import build_details_text
-from app.ui_desktop.qt import (
+from app.desktop_ui.audio_controller import DesktopAudioController
+from app.desktop_ui.helpers import build_details_text
+from app.desktop_ui.qt import (
     QApplication,
     QAudioInput,
     QAudioOutput,
@@ -16,11 +16,11 @@ from app.ui_desktop.qt import (
     QTimer,
     Slot,
 )
-from app.ui_desktop.tasks import BackgroundTask
-from app.ui_desktop.theme import METRICS, build_desktop_stylesheet, status_badge_styles
-from app.ui_desktop.transcription_controller import DesktopTranscriptionController
-from app.ui_desktop.view import build_desktop_view
-from schemas.runtime import ASRPreparationResult
+from app.desktop_ui.tasks import BackgroundTask
+from app.desktop_ui.theme import METRICS, build_desktop_stylesheet, status_badge_styles
+from app.desktop_ui.transcription_controller import DesktopTranscriptionController
+from app.desktop_ui.view import build_desktop_view
+from schemas.runtime import PipelinePreparationResult
 from schemas.transcription import TranscriptionRun
 from services.bootstrap import AppContext
 
@@ -30,12 +30,13 @@ class VoiceDesktopWindow(QMainWindow):
         super().__init__()
         self.context = context
         self.current_audio_path: Path | None = None
+        self.current_run_dir: Path | None = None
         self._record_finalize_path: Path | None = None
         self._record_finalize_size: int | None = None
         self._record_finalize_attempts = 0
         self.current_audio_stats: dict[str, str] = {}
         self.last_run: TranscriptionRun | None = None
-        self.last_prepare_result: ASRPreparationResult | None = None
+        self.last_prepare_result: PipelinePreparationResult | None = None
         self._worker_thread: QThread | None = None
         self._worker: BackgroundTask | None = None
         self._worker_kind: str | None = None
@@ -57,8 +58,14 @@ class VoiceDesktopWindow(QMainWindow):
         self.resize(METRICS.window_width, METRICS.window_height)
         self.setStyleSheet(build_desktop_stylesheet())
         self._bind_ui(build_desktop_view(self))
+        QTimer.singleShot(0, self._initialize_window_state)
+
+    def _initialize_window_state(self) -> None:
+        self.audio_controller.populate_input_device_list(bind_device=False)
         self._set_play_button_visible(False)
         self._set_transcribe_button_mode(False)
+        self._set_status("Ready")
+        self._set_controls_enabled(True)
         self._refresh_details_panel()
 
     def _bind_ui(self, ui) -> None:

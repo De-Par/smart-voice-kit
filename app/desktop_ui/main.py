@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.ui_desktop.qt import PYSIDE_IMPORT_ERROR, QApplication
-from app.ui_desktop.window import VoiceDesktopWindow
+from app.desktop_ui.qt import PYSIDE_IMPORT_ERROR, QApplication
+from app.desktop_ui.window import VoiceDesktopWindow
 from services.bootstrap import build_app_context
 
 

@@ -4,13 +4,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.ui_desktop.qt import QMessageBox, QObject, QThread, Slot
-from app.ui_desktop.tasks import BackgroundTask
-from schemas.runtime import ASRPreparationResult
+from app.desktop_ui.qt import QMessageBox, QObject, QThread, Slot
+from app.desktop_ui.tasks import BackgroundTask
+from schemas.runtime import PipelinePreparationResult
 from schemas.transcription import TranscriptionRun
 
 if TYPE_CHECKING:
-    from app.ui_desktop.window import VoiceDesktopWindow
+    from app.desktop_ui.window import VoiceDesktopWindow
 
 
 class DesktopTranscriptionController(QObject):
@@ -92,7 +92,7 @@ class DesktopTranscriptionController(QObject):
         if isinstance(result, dict):
             prepare_payload = result.get("prepare")
             if prepare_payload is not None:
-                self.window.last_prepare_result = ASRPreparationResult.model_validate(
+                self.window.last_prepare_result = PipelinePreparationResult.model_validate(
                     prepare_payload
                 )
             result = result["run"]
@@ -108,8 +108,17 @@ class DesktopTranscriptionController(QObject):
         self.window.transcript_box.setPlainText(self.window.last_run.metadata.transcript)
         self.window.copy_button.setEnabled(bool(self.window.last_run.metadata.transcript.strip()))
         if prepare_payload is not None:
+            skipped_components = [
+                component
+                for component in self.window.last_prepare_result.components
+                if component.mode == "skipped"
+            ]
             self.window._show_notification(
-                "Local speech model prepared.",
+                (
+                    "ASR prepared. Some optional stages were skipped; check Details."
+                    if skipped_components
+                    else "Local pipeline models prepared."
+                ),
                 variant="download",
                 auto_hide_ms=5000,
             )
@@ -147,14 +156,36 @@ class DesktopTranscriptionController(QObject):
         language: str | None,
     ) -> dict[str, object]:
         try:
-            run = self.window.context.service.transcribe_file(audio_path, language=language)
+            if self.window.current_run_dir is not None and audio_path.is_relative_to(
+                self.window.current_run_dir
+            ):
+                run = self.window.context.service.transcribe_existing_run_audio(
+                    self.window.current_run_dir,
+                    audio_path,
+                    language=language,
+                )
+            else:
+                run = self.window.context.service.transcribe_file(audio_path, language=language)
             return {"run": run}
         except RuntimeError as error:
-            if "Local speech model is not available" not in str(error):
+            recoverable_errors = (
+                "Local speech model is not available",
+                "Local translation model is not available",
+            )
+            if not any(message in str(error) for message in recoverable_errors):
                 raise
 
-        prepare_result = self.window.context.service.prepare_asr_assets()
-        run = self.window.context.service.transcribe_file(audio_path, language=language)
+        prepare_result = self.window.context.service.prepare_pipeline_assets()
+        if self.window.current_run_dir is not None and audio_path.is_relative_to(
+            self.window.current_run_dir
+        ):
+            run = self.window.context.service.transcribe_existing_run_audio(
+                self.window.current_run_dir,
+                audio_path,
+                language=language,
+            )
+        else:
+            run = self.window.context.service.transcribe_file(audio_path, language=language)
         return {
             "run": run,
             "prepare": prepare_result,

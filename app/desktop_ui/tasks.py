@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from app.ui_desktop.qt import QObject, Signal, Slot
+from app.desktop_ui.qt import QObject, Signal, Slot
 
 logger = logging.getLogger(__name__)
 

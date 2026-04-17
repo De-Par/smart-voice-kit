@@ -7,12 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from core.formatting import format_bytes
-from core.settings import load_settings
-from schemas.config import AppSettings
-from schemas.runtime import ASRPreparationResult
 from schemas.transcription import TranscriptionRun
-from services.asr_preparation import prepare_asr_assets
 from services.bootstrap import build_app_context
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -24,31 +19,29 @@ def _render_result(result: TranscriptionRun) -> None:
     table.add_row("Run ID", result.metadata.id)
     table.add_row("Timestamp", result.metadata.timestamp.isoformat())
     table.add_row("Transcript", result.metadata.transcript or "<empty>")
+    table.add_row("Transcript EN", result.metadata.transcript_en or "<empty>")
     table.add_row("Language", result.metadata.language or "<unknown>")
+    table.add_row("Target language", result.metadata.target_language)
     table.add_row("Duration", f"{result.metadata.duration_seconds:.2f}s")
     table.add_row("Sample rate", str(result.metadata.sample_rate))
-    table.add_row("Inference", f"{result.metadata.inference_seconds:.2f}s")
+    table.add_row("ASR inference", f"{result.metadata.inference_seconds:.2f}s")
+    table.add_row("ASR family", result.metadata.asr_family)
+    table.add_row("ASR provider", result.metadata.asr_provider)
+    table.add_row(
+        "Translation inference",
+        (
+            f"{result.metadata.translation_inference_seconds:.2f}s"
+            if result.metadata.translation_inference_seconds is not None
+            else "<disabled>"
+        ),
+    )
+    table.add_row("Translation family", result.metadata.translation_family or "<disabled>")
+    table.add_row(
+        "Translation provider",
+        result.metadata.translation_provider or "<disabled>",
+    )
     table.add_row("Run dir", result.run_dir)
     console.print(Panel(table, title="Transcription Result"))
-
-
-def _render_prepare_result(result: ASRPreparationResult) -> None:
-    table = Table(show_header=False)
-    table.add_row("Mode", result.mode)
-    table.add_row("Backend", result.backend)
-    table.add_row("Model", result.model_name)
-    table.add_row("Model source", result.model_source)
-    table.add_row("Download root", result.download_root or "<none>")
-    table.add_row("Files", f"{result.downloaded_files}/{result.total_files}")
-    table.add_row("Downloaded", format_bytes(result.downloaded_bytes))
-    table.add_row("Total size", format_bytes(result.total_bytes))
-    table.add_row("Offline ready", str(result.local_files_only))
-    table.add_row("Ready", str(result.ready))
-    console.print(Panel(table, title="ASR Preparation"))
-
-
-def _load_settings() -> AppSettings:
-    return load_settings()
 
 
 @app.command("transcribe-file")
@@ -80,22 +73,6 @@ def transcribe_last(
         raise typer.Exit(code=1) from error
 
     _render_result(result)
-
-
-@app.command("prepare-asr")
-def prepare_asr(
-    force: bool = typer.Option(False, "--force", help="Redownload files even if they are cached."),
-) -> None:
-    """Download or verify ASR model assets locally for offline runtime use"""
-
-    try:
-        settings = _load_settings()
-        result = prepare_asr_assets(settings, force_download=force, console=console)
-    except Exception as error:
-        console.print(f"[red]ASR preparation failed:[/red] {error}")
-        raise typer.Exit(code=1) from error
-
-    _render_prepare_result(result)
 
 
 def run() -> None:

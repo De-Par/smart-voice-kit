@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.ui_desktop.qt import (
+from app.desktop_ui.qt import (
     QComboBox,
     QDockWidget,
     QFrame,
@@ -17,7 +17,7 @@ from app.ui_desktop.qt import (
     QVBoxLayout,
     QWidget,
 )
-from app.ui_desktop.theme import METRICS
+from app.desktop_ui.theme import METRICS
 
 
 @dataclass(frozen=True)

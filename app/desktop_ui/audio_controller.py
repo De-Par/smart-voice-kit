@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.ui_desktop.qt import (
+from app.desktop_ui.qt import (
     QAudioInput,
     QAudioOutput,
     QFileDialog,
@@ -23,7 +22,7 @@ from core.audio import inspect_wav_bytes
 from core.formatting import format_bytes, format_dbfs
 
 if TYPE_CHECKING:
-    from app.ui_desktop.window import VoiceDesktopWindow
+    from app.desktop_ui.window import VoiceDesktopWindow
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +30,31 @@ logger = logging.getLogger(__name__)
 class DesktopAudioController:
     def __init__(self, window: VoiceDesktopWindow) -> None:
         self.window = window
+
+    def populate_input_device_list(self, *, bind_device: bool) -> None:
+        try:
+            input_devices = list(QMediaDevices.audioInputs())
+        except Exception:  # pragma: no cover - native multimedia boundary
+            logger.exception("Failed to enumerate audio input devices")
+            input_devices = []
+
+        self.window.input_devices = input_devices
+        self.window.input_device_combo.blockSignals(True)
+        self.window.input_device_combo.clear()
+        if input_devices:
+            for device in input_devices:
+                self.window.input_device_combo.addItem(device.description())
+            self.window.input_device_combo.setCurrentIndex(0)
+        else:
+            self.window.input_device_combo.addItem("No input devices detected")
+            self.window.input_device_combo.setCurrentIndex(0)
+        self.window.input_device_combo.blockSignals(False)
+        self.window.input_device_combo.setEnabled(bool(input_devices))
+
+        if bind_device and input_devices and self.window._audio_runtime_ready:
+            self.set_input_device(self.window.input_device_combo.currentIndex())
+        else:
+            self.window._refresh_details_panel()
 
     def ensure_audio_runtime(self) -> bool:
         if self.window._audio_runtime_ready:
@@ -69,15 +93,7 @@ class DesktopAudioController:
         self.window.player.playbackStateChanged.connect(self.handle_playback_state_changed)
 
     def load_audio_inputs(self) -> None:
-        if not self.window._audio_runtime_ready:
-            return
-        self.window.input_devices = list(QMediaDevices.audioInputs())
-        self.window.input_device_combo.clear()
-        for device in self.window.input_devices:
-            self.window.input_device_combo.addItem(device.description())
-        self.window.input_device_combo.setEnabled(bool(self.window.input_devices))
-        if self.window.input_devices:
-            self.set_input_device(0)
+        self.populate_input_device_list(bind_device=True)
 
     @Slot(int)
     def set_input_device(self, index: int) -> None:
@@ -126,12 +142,6 @@ class DesktopAudioController:
             return
         self.start_recording()
 
-    def next_capture_path(self) -> Path:
-        capture_dir = self.window.context.settings.storage.data_dir / "captures"
-        capture_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return capture_dir / f"capture_{timestamp}.wav"
-
     @Slot()
     def start_recording(self) -> None:
         if not self.ensure_audio_runtime():
@@ -140,11 +150,13 @@ class DesktopAudioController:
             return
         if self.window.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.window.player.stop()
-        output_path = self.next_capture_path()
+        run_target = self.window.context.service.create_run_target()
+        output_path = run_target.audio_path
         media_format = QMediaFormat(QMediaFormat.FileFormat.Wave)
         self.window.recorder.setMediaFormat(media_format)
         self.window.recorder.setOutputLocation(QUrl.fromLocalFile(str(output_path)))
         self.window.recorder.record()
+        self.window.current_run_dir = run_target.run_dir
         self.window.current_audio_path = output_path
         self.window._record_finalize_path = None
         self.window._record_finalize_size = None
@@ -201,6 +213,7 @@ class DesktopAudioController:
             return
 
         self.window.current_audio_path = Path(path)
+        self.window.current_run_dir = None
         self.window._record_finalize_path = None
         self.window._record_finalize_size = None
         self.window._record_finalize_attempts = 0

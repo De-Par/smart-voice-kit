@@ -26,7 +26,10 @@ def health() -> dict[str, str]:
     return {
         "status": "ok",
         "app_name": context.settings.app_name,
-        "asr_backend": context.service.asr_engine.backend_name,
+        "asr_family": context.service.asr_engine.family_name,
+        "asr_provider": context.service.asr_engine.provider_name,
+        "translation_family": context.service.translation_engine.family_name,
+        "translation_provider": context.service.translation_engine.provider_name,
     }
 
 

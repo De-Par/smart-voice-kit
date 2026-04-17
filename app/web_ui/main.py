@@ -65,6 +65,7 @@ def main() -> None:
 
         st.success("Transcription completed.")
         st.text_area("Transcript", value=result.metadata.transcript, height=200)
+        st.text_area("Transcript EN", value=result.metadata.transcript_en, height=200)
         with st.expander("Metadata"):
             st.json(result.metadata.model_dump(mode="json"))
 
