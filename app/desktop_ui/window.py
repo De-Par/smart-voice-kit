@@ -8,6 +8,7 @@ from app.desktop_ui.qt import (
     QApplication,
     QAudioInput,
     QAudioOutput,
+    QLabel,
     QMainWindow,
     QMediaCaptureSession,
     QMediaPlayer,
@@ -214,6 +215,9 @@ class VoiceDesktopWindow(QMainWindow):
         if default_button is not None:
             dialog.setDefaultButton(default_button)
         dialog.setStyleSheet(build_message_box_stylesheet())
+        for label in dialog.findChildren(QLabel):
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setWordWrap(True)
         for button in dialog.buttons():
             standard_button = dialog.standardButton(button)
             if standard_button in {

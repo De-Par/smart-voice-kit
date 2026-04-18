@@ -114,7 +114,10 @@ class DesktopMetrics:
     details_padding: int = 14
     dialog_radius: int = 18
     dialog_padding: int = 14
-    dialog_button_min_width: int = 100
+    dialog_button_radius: int = 16
+    dialog_button_min_width: int = 84
+    dialog_button_min_height: int = 44
+    dialog_button_padding_horizontal: int = 18
 
 
 PALETTE = DesktopPalette()
@@ -379,10 +382,14 @@ def build_message_box_stylesheet() -> str:
             background: {p.button_bg};
             color: {p.text};
             border: 1px solid {p.button_border};
-            border-radius: {m.button_radius}px;
-            padding: {m.button_padding_vertical}px {m.button_padding_horizontal}px;
+            border-radius: {m.dialog_button_radius}px;
+            padding: 0 {m.dialog_button_padding_horizontal}px;
             min-width: {m.dialog_button_min_width}px;
+            min-height: {m.dialog_button_min_height}px;
+            max-height: {m.dialog_button_min_height}px;
+            font-size: 13px;
             font-weight: 600;
+            text-align: center;
         }}
         QMessageBox QPushButton:hover {{
             background: {p.button_hover};
