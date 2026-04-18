@@ -12,12 +12,13 @@ from app.desktop_ui.qt import (
     QMediaCaptureSession,
     QMediaPlayer,
     QMediaRecorder,
+    Qt,
     QThread,
     QTimer,
     Slot,
 )
 from app.desktop_ui.tasks import BackgroundTask
-from app.desktop_ui.theme import METRICS, build_desktop_stylesheet, status_badge_styles
+from app.desktop_ui.theme import METRICS, build_desktop_stylesheet
 from app.desktop_ui.transcription_controller import DesktopTranscriptionController
 from app.desktop_ui.view import build_desktop_view
 from schemas.runtime import PipelinePreparationResult
@@ -44,9 +45,9 @@ class VoiceDesktopWindow(QMainWindow):
         self._worker_kind: str | None = None
         self._discard_worker_result = False
         self.input_devices: list[object] = []
-        self._notification_timer = QTimer(self)
-        self._notification_timer.setSingleShot(True)
-        self._notification_timer.timeout.connect(self._hide_notification)
+        self._notification_reset_timer = QTimer(self)
+        self._notification_reset_timer.setSingleShot(True)
+        self._notification_reset_timer.timeout.connect(self._hide_notification)
         self._notification_animation_timer = QTimer(self)
         self._notification_animation_timer.setInterval(260)
         self._notification_animation_timer.timeout.connect(self._advance_notification_animation)
@@ -67,6 +68,7 @@ class VoiceDesktopWindow(QMainWindow):
 
         self.setWindowTitle("iVoice")
         self.resize(METRICS.window_width, METRICS.window_height)
+        self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
         self.setStyleSheet(build_desktop_stylesheet())
         self._bind_ui(build_desktop_view(self))
         QTimer.singleShot(0, self._initialize_window_state)
@@ -75,23 +77,17 @@ class VoiceDesktopWindow(QMainWindow):
         self.audio_controller.populate_input_device_list(bind_device=False)
         self._set_play_button_visible(False)
         self._set_transcribe_button_mode(False)
-        self._set_status("Starting")
+        self._show_notification("Starting runtime", tone="warning", animate=True, auto_hide_ms=0)
         self._set_controls_enabled(False)
-        self._show_notification(
-            self._startup_message,
-            variant="download",
-            auto_hide_ms=0,
-            animate=True,
-        )
         self._refresh_details_panel()
         self._start_startup_bootstrap()
 
     def _bind_ui(self, ui) -> None:
         self.ui = ui
+        self.root = ui.root
         self.notification_bar = ui.notification_bar
         self.notification_text = ui.notification_text
         self.notification_dismiss = ui.notification_dismiss
-        self.status_badge = ui.status_badge
         self.details_button = ui.details_button
         self.language_input = ui.language_input
         self.input_device_combo = ui.input_device_combo
@@ -116,9 +112,10 @@ class VoiceDesktopWindow(QMainWindow):
         )
         self.input_device_combo.currentIndexChanged.connect(self.audio_controller.set_input_device)
         self.details_button.toggled.connect(self._toggle_details)
-        self.notification_dismiss.clicked.connect(self._hide_notification)
         self.copy_button.clicked.connect(self._copy_transcript)
+        self.notification_dismiss.clicked.connect(self._hide_notification)
         self.details_dock.visibilityChanged.connect(self._sync_details_toggle)
+        self._enable_button_tooltips()
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         recorder_state = None
@@ -137,7 +134,7 @@ class VoiceDesktopWindow(QMainWindow):
         self.input_device_combo.setEnabled(enabled and bool(self.input_devices))
         self.language_input.setEnabled(enabled)
         self.details_button.setEnabled(enabled)
-        self.notification_dismiss.setEnabled(enabled)
+        self.copy_button.setEnabled(enabled and bool(self.transcript_box.toPlainText().strip()))
 
     def _set_play_button_visible(self, visible: bool) -> None:
         self.play_button.setVisible(visible)
@@ -145,6 +142,7 @@ class VoiceDesktopWindow(QMainWindow):
     def _set_play_button_mode(self, is_playing: bool) -> None:
         self.play_button.setProperty("active", is_playing)
         self.play_button.setText("⏸" if is_playing else "▶")
+        self.play_button.setToolTip("Pause current audio" if is_playing else "Play current audio")
         self.play_button.style().unpolish(self.play_button)
         self.play_button.style().polish(self.play_button)
 
@@ -153,9 +151,11 @@ class VoiceDesktopWindow(QMainWindow):
         if is_recording:
             self.record_button.setText("Stop")
             self.record_button.setObjectName("dangerButton")
+            self.record_button.setToolTip("Stop the current recording")
         else:
             self.record_button.setText("Record")
             self.record_button.setObjectName("recordButton")
+            self.record_button.setToolTip("Record audio from the current input device")
         self.record_button.style().unpolish(self.record_button)
         self.record_button.style().polish(self.record_button)
 
@@ -165,58 +165,81 @@ class VoiceDesktopWindow(QMainWindow):
             return
         clipboard = QApplication.clipboard()
         clipboard.setText(text)
-        self._show_notification("Transcript copied.", variant="cold", auto_hide_ms=1500)
+        self._show_notification("Copied", tone="success", auto_hide_ms=1200)
 
     def _set_transcribe_button_mode(self, is_running: bool) -> None:
         if is_running:
             self.transcribe_button.setText("Stop")
             self.transcribe_button.setObjectName("dangerButton")
+            self.transcribe_button.setToolTip("Stop the current transcription task")
         else:
             self.transcribe_button.setText("Transcribe")
             self.transcribe_button.setObjectName("primaryButton")
+            self.transcribe_button.setToolTip("Run local transcription for the current audio")
         self.transcribe_button.style().unpolish(self.transcribe_button)
         self.transcribe_button.style().polish(self.transcribe_button)
+
+    def _enable_button_tooltips(self) -> None:
+        always_show = Qt.WidgetAttribute.WA_AlwaysShowToolTips
+        for widget in (
+            self.notification_dismiss,
+            self.details_button,
+            self.record_button,
+            self.play_button,
+            self.open_button,
+            self.transcribe_button,
+            self.copy_button,
+        ):
+            widget.setAttribute(always_show, True)
 
     def _show_notification(
         self,
         text: str,
         *,
-        variant: str = "cold",
+        tone: str = "warning",
         auto_hide_ms: int = 5000,
         animate: bool = False,
     ) -> None:
-        self._notification_timer.stop()
+        self._notification_reset_timer.stop()
         self._notification_animation_timer.stop()
         self._notification_base_text = text
         self._notification_animation_index = 0
+        self.notification_bar.setProperty("tone", tone)
+        self.notification_bar.style().unpolish(self.notification_bar)
+        self.notification_bar.style().polish(self.notification_bar)
+        self.notification_bar.show()
+        self.notification_bar.raise_()
+        self._layout_notification_bar()
         if animate:
             self._advance_notification_animation()
             self._notification_animation_timer.start()
         else:
             self.notification_text.setText(text)
-        self.notification_bar.setProperty("variant", variant)
-        self.notification_bar.style().unpolish(self.notification_bar)
-        self.notification_bar.style().polish(self.notification_bar)
-        self.notification_bar.show()
         if auto_hide_ms > 0:
-            self._notification_timer.start(auto_hide_ms)
+            self._notification_reset_timer.start(auto_hide_ms)
 
     @Slot()
     def _advance_notification_animation(self) -> None:
         frame = self._NOTIFICATION_FRAMES[self._notification_animation_index]
         self.notification_text.setText(f"{self._notification_base_text}{frame}")
-        self._notification_animation_index = (
-            self._notification_animation_index + 1
-        ) % len(self._NOTIFICATION_FRAMES)
+        self._notification_animation_index = (self._notification_animation_index + 1) % len(
+            self._NOTIFICATION_FRAMES
+        )
 
+    @Slot()
     def _hide_notification(self) -> None:
-        self._notification_timer.stop()
+        self._notification_reset_timer.stop()
         self._notification_animation_timer.stop()
         self.notification_bar.hide()
 
-    def _set_status(self, text: str) -> None:
-        self.status_badge.setText(text)
-        self.status_badge.setStyleSheet(status_badge_styles(text))
+    def _layout_notification_bar(self) -> None:
+        if not self.notification_bar.isVisible():
+            return
+        root_width = self.root.width()
+        width = min(METRICS.notification_max_width, max(240, root_width - 48))
+        x = (root_width - width) // 2
+        y = METRICS.notification_overlay_top
+        self.notification_bar.setGeometry(x, y, width, METRICS.notification_min_height)
 
     def _refresh_details_panel(self) -> None:
         details_text = build_details_text(
@@ -263,24 +286,14 @@ class VoiceDesktopWindow(QMainWindow):
         self.last_prepare_result = PipelinePreparationResult.model_validate(payload["prepare"])
         self._startup_ready = True
         self.audio_controller.populate_input_device_list(bind_device=False)
-        self._set_status("Ready")
+        self._show_notification("Runtime ready", tone="success", auto_hide_ms=1800)
         self._set_controls_enabled(True)
-        self._show_notification(
-            "Local runtime initialized from cache.",
-            variant="download",
-            auto_hide_ms=2500,
-        )
         self._refresh_details_panel()
 
     @Slot(str)
     def _handle_startup_failure(self, message: str) -> None:
         self._startup_ready = False
-        self._set_status("Error")
-        self._show_notification(
-            "Startup failed. Check configuration or model cache.",
-            variant="download",
-            auto_hide_ms=0,
-        )
+        self._show_notification("Startup failed", tone="error", auto_hide_ms=0)
         self._startup_message = message
         self._refresh_details_panel()
 
@@ -298,3 +311,7 @@ class VoiceDesktopWindow(QMainWindow):
         self.details_button.blockSignals(True)
         self.details_button.setChecked(visible)
         self.details_button.blockSignals(False)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._layout_notification_bar()

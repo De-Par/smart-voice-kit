@@ -105,7 +105,7 @@ class DesktopAudioController:
         if self.window.audio_input is None:
             return
         self.window.audio_input.setDevice(device)
-        self.window._set_status("Ready")
+        self.window._hide_notification()
         self.window._refresh_details_panel()
 
     @Slot(object)
@@ -117,6 +117,12 @@ class DesktopAudioController:
         self.window.play_button.setEnabled(has_audio and not is_recording and not is_finalizing)
         self.window.transcribe_button.setEnabled(
             has_audio and not is_recording and not is_finalizing
+        )
+        self.window.copy_button.setEnabled(
+            has_audio
+            and not is_recording
+            and not is_finalizing
+            and bool(self.window.transcript_box.toPlainText().strip())
         )
         if not is_recording and is_finalizing:
             QTimer.singleShot(220, self.finalize_recorded_audio)
@@ -170,9 +176,14 @@ class DesktopAudioController:
         self.window._record_finalize_attempts = 0
         self.window.current_audio_stats = {}
         self.window.audio_summary.setText("Recording...")
-        self.window._set_status("Recording")
+        self.window._show_notification("Recording", tone="warning", animate=True, auto_hide_ms=0)
         self.window._set_play_button_visible(False)
+        self.window.open_button.setEnabled(False)
+        self.window.input_device_combo.setEnabled(False)
+        self.window.language_input.setEnabled(False)
+        self.window.details_button.setEnabled(False)
         self.window.transcribe_button.setEnabled(False)
+        self.window.copy_button.setEnabled(False)
         self.window._refresh_details_panel()
 
     @Slot()
@@ -185,9 +196,19 @@ class DesktopAudioController:
             self.window._record_finalize_size = None
             self.window._record_finalize_attempts = 0
             self.window.audio_summary.setText("Finalizing recording...")
-            self.window._set_status("Finalizing")
+            self.window._show_notification(
+                "Finalizing",
+                tone="warning",
+                animate=True,
+                auto_hide_ms=0,
+            )
             self.window._set_play_button_visible(False)
+            self.window.open_button.setEnabled(False)
+            self.window.input_device_combo.setEnabled(False)
+            self.window.language_input.setEnabled(False)
+            self.window.details_button.setEnabled(False)
             self.window.transcribe_button.setEnabled(False)
+            self.window.copy_button.setEnabled(False)
 
     @Slot()
     def play_audio(self) -> None:
@@ -225,7 +246,7 @@ class DesktopAudioController:
         self.window._record_finalize_size = None
         self.window._record_finalize_attempts = 0
         self.update_audio_details(self.window.current_audio_path)
-        self.window._set_status("Loaded")
+        self.window._show_notification("Loaded", tone="success", auto_hide_ms=1400)
         self.window._set_controls_enabled(True)
 
     def finalize_recorded_audio(self) -> None:
@@ -260,10 +281,9 @@ class DesktopAudioController:
         self.window._record_finalize_size = None
         self.window._record_finalize_attempts = 0
         self.update_audio_details(audio_path)
-        self.window._set_status("Recorded")
+        self.window._show_notification("Recorded", tone="success", auto_hide_ms=1600)
         self.window._set_play_button_visible(True)
-        self.window.play_button.setEnabled(True)
-        self.window.transcribe_button.setEnabled(True)
+        self.window._set_controls_enabled(True)
 
     def update_audio_details(self, audio_path: Path) -> None:
         try:

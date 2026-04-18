@@ -22,10 +22,10 @@ from app.desktop_ui.theme import METRICS
 
 @dataclass(frozen=True)
 class DesktopWidgets:
+    root: QWidget
     notification_bar: QFrame
     notification_text: QLabel
     notification_dismiss: QPushButton
-    status_badge: QLabel
     details_button: QPushButton
     language_input: QLineEdit
     input_device_combo: QComboBox
@@ -53,19 +53,10 @@ def build_desktop_view(window) -> DesktopWidgets:
     )
     layout.setSpacing(m.root_spacing)
 
-    hero_card = QFrame()
-    hero_card.setObjectName("heroCard")
-    hero_layout = QVBoxLayout(hero_card)
-    hero_layout.setContentsMargins(m.hero_padding, m.hero_padding, m.hero_padding, m.hero_padding)
-    hero_layout.setSpacing(m.hero_spacing)
-
-    title = QLabel("iVoice")
-    title.setObjectName("titleLabel")
-    subtitle = QLabel("Instruction-driven speech starts with local capture and analysis.")
-    subtitle.setObjectName("subtitleLabel")
-
-    notification_bar = QFrame()
+    notification_bar = QFrame(root)
     notification_bar.setObjectName("notificationBar")
+    notification_bar.hide()
+
     notification_layout = QHBoxLayout(notification_bar)
     notification_layout.setContentsMargins(
         m.notification_padding_horizontal,
@@ -77,31 +68,40 @@ def build_desktop_view(window) -> DesktopWidgets:
 
     notification_text = QLabel()
     notification_text.setObjectName("notificationText")
-    notification_text.setWordWrap(True)
-
-    notification_dismiss = QPushButton("x")
+    notification_text.setWordWrap(False)
+    notification_dismiss = QPushButton("×")
     notification_dismiss.setObjectName("notificationDismiss")
+    notification_dismiss.setToolTip("Dismiss notification")
     notification_dismiss.setCursor(Qt.CursorShape.PointingHandCursor)
-    notification_dismiss.setToolTip("Dismiss")
+    notification_dismiss.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
     notification_layout.addWidget(notification_text, 1)
     notification_layout.addWidget(notification_dismiss)
-    notification_bar.hide()
+    notification_bar.raise_()
+
+    hero_card = QFrame()
+    hero_card.setObjectName("heroCard")
+    hero_layout = QVBoxLayout(hero_card)
+    hero_layout.setContentsMargins(m.hero_padding, m.hero_padding, m.hero_padding, m.hero_padding)
+    hero_layout.setSpacing(m.hero_spacing)
 
     header_row = QHBoxLayout()
-    status_badge = QLabel("Ready")
-    status_badge.setObjectName("statusBadge")
+    title = QLabel("iVoice")
+    title.setObjectName("titleLabel")
+    title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
     details_button = QPushButton("Details")
     details_button.setCheckable(True)
     details_button.setChecked(False)
+    details_button.setToolTip("Show runtime details")
     details_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-    header_row.addWidget(status_badge)
+    header_row.addWidget(title)
     header_row.addStretch(1)
     header_row.addWidget(details_button)
 
-    hero_layout.addWidget(title)
-    hero_layout.addWidget(subtitle)
-    hero_layout.addWidget(notification_bar)
     hero_layout.addLayout(header_row)
+    subtitle = QLabel("Instruction-driven speech starts with local capture and analysis.")
+    subtitle.setObjectName("subtitleLabel")
+    hero_layout.addWidget(subtitle)
 
     controls_card = QFrame()
     controls_card.setObjectName("controlsCard")
@@ -126,13 +126,16 @@ def build_desktop_view(window) -> DesktopWidgets:
     record_button = QPushButton("Record")
     record_button.setObjectName("recordButton")
     record_button.setProperty("active", False)
+    record_button.setToolTip("Record audio from the current input device")
     play_button = QPushButton("▶")
     play_button.setObjectName("playButton")
     play_button.setProperty("active", False)
     play_button.setToolTip("Play current audio")
     open_button = QPushButton("Open WAV")
+    open_button.setToolTip("Open a local WAV file")
     transcribe_button = QPushButton("Transcribe")
     transcribe_button.setObjectName("primaryButton")
+    transcribe_button.setToolTip("Run local transcription for the current audio")
 
     grid.addWidget(QLabel("Input device"), 0, 0)
     grid.addWidget(input_device_combo, 0, 1)
@@ -203,10 +206,10 @@ def build_desktop_view(window) -> DesktopWidgets:
     details_dock, details_box = _build_details_dock(window)
 
     return DesktopWidgets(
+        root=root,
         notification_bar=notification_bar,
         notification_text=notification_text,
         notification_dismiss=notification_dismiss,
-        status_badge=status_badge,
         details_button=details_button,
         language_input=language_input,
         input_device_combo=input_device_combo,

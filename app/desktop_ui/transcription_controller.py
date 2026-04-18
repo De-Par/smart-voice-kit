@@ -44,19 +44,10 @@ class DesktopTranscriptionController(QObject):
         language = self.window.language_input.text().strip() or None
         audio_path = self.window.current_audio_path
         cold_start = getattr(self.window.context.service.asr_engine, "_model", None) is None
-        if cold_start:
-            self.window._show_notification(
-                "Cold start: checking model cache and preparing local speech analysis. "
-                "The first run may take a while.",
-                variant="cold",
-                auto_hide_ms=0,
-            )
-        else:
-            self.window._hide_notification()
         self.run_background(
             fn=lambda: self.transcribe_with_auto_prepare(audio_path, language),
             on_success=self.show_transcription_result,
-            busy_message="Cold start..." if cold_start else "Transcribing...",
+            busy_message="Preparing models" if cold_start else "Transcribing",
             kind="transcribe",
         )
 
@@ -73,7 +64,7 @@ class DesktopTranscriptionController(QObject):
 
         self.window._worker_kind = kind
         self.window._discard_worker_result = False
-        self.window._set_status(busy_message)
+        self.window._show_notification(busy_message, tone="warning", animate=True, auto_hide_ms=0)
         self.window._set_controls_enabled(False)
 
         thread = QThread(self.window)
@@ -107,7 +98,6 @@ class DesktopTranscriptionController(QObject):
         if self.window._discard_worker_result:
             self.window._discard_worker_result = False
             self.window._hide_notification()
-            self.window._set_status("Ready")
             self.window._refresh_details_panel()
             return
 
@@ -121,23 +111,17 @@ class DesktopTranscriptionController(QObject):
                 if component.mode == "skipped"
             ]
             self.window._show_notification(
-                (
-                    "ASR prepared. Some optional stages were skipped; check Details."
-                    if skipped_components
-                    else "Local pipeline models prepared."
-                ),
-                variant="download",
-                auto_hide_ms=5000,
+                "Check details" if skipped_components else "Models ready",
+                tone="success",
+                auto_hide_ms=1800,
             )
         else:
-            self.window._hide_notification()
-        self.window._set_status("Done")
+            self.window._show_notification("Done", tone="success", auto_hide_ms=1400)
         self.window._refresh_details_panel()
 
     @Slot(str)
     def show_error(self, message: str) -> None:
-        self.window._hide_notification()
-        self.window._set_status("Error")
+        self.window._show_notification("Task failed", tone="error", auto_hide_ms=0)
         QMessageBox.critical(self.window, "Operation failed", message)
 
     @Slot()
@@ -150,12 +134,7 @@ class DesktopTranscriptionController(QObject):
     def request_stop_transcription(self) -> None:
         self.window._discard_worker_result = True
         self.window.transcribe_button.setEnabled(False)
-        self.window._show_notification(
-            "Stop requested. Waiting for the current step to finish.",
-            variant="download",
-            auto_hide_ms=5000,
-        )
-        self.window._set_status("Stopping")
+        self.window._show_notification("Stopping", tone="warning", animate=True, auto_hide_ms=0)
 
     def transcribe_with_auto_prepare(
         self,
