@@ -100,8 +100,8 @@ class DesktopMetrics:
     logo_height: int = 72
     logo_max_width: int = 180
 
-    play_button_radius: int = 10
-    play_button_size: int = 28
+    play_button_radius: int = 9
+    play_button_size: int = 24
 
     details_min_width: int = 320
     section_title_size: int = 16
@@ -284,28 +284,31 @@ def build_desktop_stylesheet() -> str:
             border: 1px solid {p.button_disabled_border};
         }}
         QPushButton#playButton {{
-            background: {p.primary};
-            color: white;
-            border: 1px solid {p.primary};
+            background: {p.surface_muted};
+            color: {p.text_soft};
+            border: 1px solid {p.border_muted};
             border-radius: {m.play_button_radius}px;
             padding: 0;
             min-width: {m.play_button_size}px;
             max-width: {m.play_button_size}px;
             min-height: {m.play_button_size}px;
             max-height: {m.play_button_size}px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 700;
         }}
         QPushButton#playButton:hover {{
-            background: {p.primary_hover};
-            border: 1px solid {p.primary_hover};
+            background: {p.button_hover};
+            color: {p.text};
+            border: 1px solid {p.button_hover_border};
         }}
         QPushButton#playButton[active="true"] {{
             background: {p.danger};
+            color: white;
             border: 1px solid {p.danger};
         }}
         QPushButton#playButton[active="true"]:hover {{
             background: {p.danger_hover};
+            color: white;
             border: 1px solid {p.danger_hover};
         }}
         QPushButton#playButton:disabled {{
