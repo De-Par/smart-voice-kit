@@ -65,28 +65,28 @@ class BaseTransformersTranslationEngine(BaseTranslationEngine, ABC):
 
         self._configure_torch_runtime(torch)
         model_device = self._resolve_device(torch)
+        source = self._resolve_runtime_source()
         logger.info(
             "Initializing translation family=%s provider=%s model_source=%s device=%s "
             "cpu_threads=%s local_files_only=%s download_root=%s",
             self.family_name,
             self.provider_name,
-            self.model_source,
+            source,
             model_device,
             self.cpu_threads,
             self.local_files_only,
             self.download_root,
         )
 
-        source = self.model_path or self.model_name
         try:
             self._tokenizer = AutoTokenizer.from_pretrained(
-                source,
-                cache_dir=self.download_root,
+                str(source),
+                cache_dir=None if isinstance(source, Path) else self.download_root,
                 local_files_only=self.local_files_only,
             )
             self._model = AutoModelForSeq2SeqLM.from_pretrained(
-                source,
-                cache_dir=self.download_root,
+                str(source),
+                cache_dir=None if isinstance(source, Path) else self.download_root,
                 local_files_only=self.local_files_only,
             )
         except Exception as error:
@@ -101,6 +101,34 @@ class BaseTransformersTranslationEngine(BaseTranslationEngine, ABC):
         self._model.to(model_device)
         self._model.eval()
         return self._tokenizer, self._model
+
+    def _resolve_runtime_source(self) -> str | Path:
+        if self.model_path is not None:
+            return self.model_path
+        if not self.local_files_only or self.download_root is None:
+            return self.model_name
+
+        repo_dir = self.download_root / f"models--{self.model_name.replace('/', '--')}"
+        snapshots_dir = repo_dir / "snapshots"
+        if not snapshots_dir.exists():
+            return self.model_name
+
+        refs_main = repo_dir / "refs" / "main"
+        if refs_main.exists():
+            revision = refs_main.read_text(encoding="utf-8").strip()
+            if revision:
+                snapshot_path = snapshots_dir / revision
+                if snapshot_path.exists():
+                    return snapshot_path
+
+        snapshot_candidates = sorted(
+            (path for path in snapshots_dir.iterdir() if path.is_dir()),
+            key=lambda path: path.name,
+        )
+        if snapshot_candidates:
+            return snapshot_candidates[-1]
+
+        return self.model_name
 
     def _configure_torch_runtime(self, torch_module) -> None:
         if self.cpu_threads <= 0:
