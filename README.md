@@ -1,6 +1,5 @@
-# iVoice - Instruction-driven speech foundation with local audio processing
-
-<p>
+<div align="center">
+    <h1>iVoice - Instruction-driven speech foundation</h1>
     <a href="https://www.python.org/">
         <img src="https://img.shields.io/badge/Python-3.11%2B-2563EB?style=flat-square" alt="Python 3.11+">
     </a>
@@ -25,10 +24,11 @@
     <a href="https://www.uvicorn.org/">
         <img src="https://img.shields.io/badge/Server-Uvicorn-EC3899?style=flat-square" alt="Server Uvicorn">
     </a>
-</p>
+    <p></p>
+</div>
 
 <div align="center">
-    <img src="assets/images/logo.png" alt="iVoice logo" width="70%">
+    <img src="assets/images/logo.png" alt="iVoice logo" width="80%">
 </div>
 
 
