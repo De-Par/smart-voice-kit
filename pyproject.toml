@@ -20,6 +20,7 @@ asr = [
     "faster-whisper>=1.1.0",
 ]
 translation = [
+    "langdetect>=1.0.9",
     "sacremoses>=0.1.1",
     "sentencepiece>=0.2.0",
     "torch>=2.3.0",
