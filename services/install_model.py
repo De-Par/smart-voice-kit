@@ -13,6 +13,7 @@ from schemas.model import ModelRequest
 from schemas.runtime import ModelPreparationResult, PipelinePreparationResult
 from services.prepare_model import (
     build_asr_model_request,
+    build_pcs_model_request,
     build_translation_model_request,
     prepare_configured_models,
     prepare_model,
@@ -126,6 +127,15 @@ def install_model(
             local_files_only=False,
             force_download=force,
         )
+    elif task == "pcs":
+        request = build_pcs_model_request(
+            settings,
+            family=family,
+            provider=provider,
+            model_name=model_name,
+            local_files_only=False,
+            force_download=force,
+        )
     else:
         request = build_translation_model_request(
             settings,
@@ -173,7 +183,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
         prog="ivoice-install-model",
         description=(
             "Install or verify a specific local model for iVoice. "
-            "Supported families: asr/whisper and translation/m2m100|opus_mt."
+            "Supported tasks: asr/whisper, translation/m2m100|opus_mt, and "
+            "pcs/punctuation."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -250,6 +261,36 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Optional normalized target language label such as `en`.",
     )
     translation_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Redownload files even if they are already cached.",
+    )
+
+    pcs_parser = subparsers.add_parser(
+        "pcs",
+        help="Install a concrete punctuation/capitalization model for local runtime.",
+    )
+    pcs_parser.add_argument(
+        "--family",
+        default="punctuation",
+        choices=["punctuation"],
+        help="PCS model family.",
+    )
+    pcs_parser.add_argument(
+        "--provider",
+        default="onnx",
+        choices=["transformers", "onnx"],
+        help="PCS runtime provider.",
+    )
+    pcs_parser.add_argument(
+        "--model-name",
+        default=None,
+        help=(
+            "Concrete PCS model name, for example "
+            "`1-800-BAD-CODE/xlm-roberta_punctuation_fullstop_truecase`."
+        ),
+    )
+    pcs_parser.add_argument(
         "--force",
         action="store_true",
         help="Redownload files even if they are already cached.",

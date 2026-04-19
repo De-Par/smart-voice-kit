@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from core.language import (
     LanguageDetectionError,
     analyze_text_language_spans,
@@ -7,16 +9,22 @@ from core.language import (
     detect_text_script,
     normalize_language_code,
 )
+from core.pcs.base import BasePCSEngine
+from core.text_cleanup import clean_command_text
 from schemas.command import (
     CommandNormalizationResult,
     CommandSource,
     CommandSpan,
     LanguageResolution,
     NormalizedCommand,
+    PCSNormalizationResult,
 )
 from schemas.config import AppSettings
 from schemas.runtime import ModelPreparationResult
+from services.span_normalization import SpanNormalizationService
 from services.translation_router import TranslationRouter
+
+logger = logging.getLogger(__name__)
 
 
 class CommandNormalizationService:
@@ -24,15 +32,60 @@ class CommandNormalizationService:
         self,
         settings: AppSettings,
         translation_router: TranslationRouter,
+        pcs_engine: BasePCSEngine | None = None,
     ) -> None:
         self.settings = settings
         self.translation_router = translation_router
+        self.pcs_engine = pcs_engine
+        self.span_normalization_service = SpanNormalizationService(translation_router)
 
-    def warm_up_routes(self) -> list[ModelPreparationResult]:
+    def warm_up_components(self) -> list[ModelPreparationResult]:
         components: list[ModelPreparationResult] = []
         for route in self.translation_router.iter_routes():
             engine = self.translation_router.get_engine(route)
-            components.append(engine.prepare())
+            try:
+                components.append(engine.prepare())
+            except RuntimeError as error:
+                components.append(
+                    ModelPreparationResult(
+                        task="translation",
+                        family=route.descriptor.family,
+                        provider=route.descriptor.provider,
+                        model_name=route.descriptor.model_name,
+                        model_source=route.descriptor.model_name,
+                        download_root=(
+                            str(route.descriptor.download_root)
+                            if route.descriptor.download_root is not None
+                            else None
+                        ),
+                        local_files_only=route.descriptor.local_files_only,
+                        ready=False,
+                        mode="skipped",
+                        message=str(error),
+                    )
+                )
+        if self.settings.pcs.enabled and self.pcs_engine is not None:
+            try:
+                components.append(self.pcs_engine.prepare())
+            except RuntimeError as error:
+                components.append(
+                    ModelPreparationResult(
+                        task="pcs",
+                        family=self.settings.pcs.family,
+                        provider=self.settings.pcs.provider,
+                        model_name=self.settings.pcs.model_name,
+                        model_source=self.settings.pcs.model_name,
+                        download_root=(
+                            str(self.settings.pcs.download_root)
+                            if self.settings.pcs.download_root is not None
+                            else None
+                        ),
+                        local_files_only=self.settings.pcs.local_files_only,
+                        ready=False,
+                        mode="skipped",
+                        message=str(error),
+                    )
+                )
         return components
 
     def resolve_language(
@@ -71,17 +124,18 @@ class CommandNormalizationService:
         source_if_explicit: str = "explicit",
         source_if_fallback: str = "fallback",
     ) -> CommandNormalizationResult:
-        source_text = text.strip()
+        source_text = clean_command_text(text)
         if not source_text:
             raise ValueError("Command text cannot be empty.")
 
         target_language = normalize_language_code(self.settings.translation.target_language) or "en"
         if allow_segmented_fallback and self._should_prefer_span_normalization(source_text):
-            return self._normalize_command_by_spans(
-                source_text,
-                modality=modality,
-                fallback_language=language or fallback_language,
-                target_language=target_language,
+            return self._finalize_result(
+                self.span_normalization_service.normalize(
+                    source_text,
+                    modality=modality,
+                    target_language=target_language,
+                )
             )
         try:
             resolution = self.resolve_language(
@@ -97,11 +151,12 @@ class CommandNormalizationService:
                 raise
             message = str(error).lower()
             if "mixed scripts" in message or "ambiguous" in message:
-                return self._normalize_command_by_spans(
-                    source_text,
-                    modality=modality,
-                    fallback_language=fallback_language,
-                    target_language=target_language,
+                return self._finalize_result(
+                    self.span_normalization_service.normalize(
+                        source_text,
+                        modality=modality,
+                        target_language=target_language,
+                    )
                 )
             raise
 
@@ -113,46 +168,50 @@ class CommandNormalizationService:
         )
 
         if not self.settings.translation.enabled:
-            return CommandNormalizationResult(
-                source=command_source,
-                normalized=NormalizedCommand(
-                    text=source_text,
-                    target_language=target_language,
-                    status="disabled",
-                    message="Translation is disabled.",
-                ),
-                spans=[
-                    CommandSpan(
+            return self._finalize_result(
+                CommandNormalizationResult(
+                    source=command_source,
+                    normalized=NormalizedCommand(
                         text=source_text,
-                        kind="text",
-                        language=resolution.language,
-                        language_source=resolution.source,
+                        target_language=target_language,
                         status="disabled",
-                        normalized_text=source_text,
-                    )
-                ],
+                        message="Translation is disabled.",
+                    ),
+                    spans=[
+                        CommandSpan(
+                            text=source_text,
+                            kind="text",
+                            language=resolution.language,
+                            language_source=resolution.source,
+                            status="disabled",
+                            normalized_text=source_text,
+                        )
+                    ],
+                )
             )
 
         if resolution.language is not None and resolution.language == target_language:
-            return CommandNormalizationResult(
-                source=command_source,
-                normalized=NormalizedCommand(
-                    text=source_text,
-                    target_language=target_language,
-                    status="skipped",
-                    message="Command already matches target language.",
-                    preserved_span_count=1,
-                ),
-                spans=[
-                    CommandSpan(
+            return self._finalize_result(
+                CommandNormalizationResult(
+                    source=command_source,
+                    normalized=NormalizedCommand(
                         text=source_text,
-                        kind="text",
-                        language=resolution.language,
-                        language_source=resolution.source,
-                        status="kept",
-                        normalized_text=source_text,
-                    )
-                ],
+                        target_language=target_language,
+                        status="skipped",
+                        message="Command already matches target language.",
+                        preserved_span_count=1,
+                    ),
+                    spans=[
+                        CommandSpan(
+                            text=source_text,
+                            kind="text",
+                            language=resolution.language,
+                            language_source=resolution.source,
+                            status="kept",
+                            normalized_text=source_text,
+                        )
+                    ],
+                )
             )
 
         try:
@@ -164,202 +223,41 @@ class CommandNormalizationService:
         except RuntimeError:
             if language is not None and not allow_segmented_fallback:
                 raise
-            return self._normalize_command_by_spans(
-                source_text,
-                modality=modality,
-                fallback_language=language or fallback_language,
-                target_language=target_language,
+            return self._finalize_result(
+                self.span_normalization_service.normalize(
+                    source_text,
+                    modality=modality,
+                    target_language=target_language,
+                )
             )
 
-        return CommandNormalizationResult(
-            source=command_source,
-            normalized=NormalizedCommand(
-                text=translation.text,
-                target_language=translation.target_language,
-                status="translated",
-                translated_span_count=1,
-                translation_family=translation.translation_family,
-                translation_provider=translation.translation_provider,
-                translation_model_name=translation.model_name,
-                translation_inference_seconds=translation.inference_seconds,
-            ),
-            spans=[
-                CommandSpan(
-                    text=source_text,
-                    kind="text",
-                    language=resolution.language,
-                    language_source=resolution.source,
+        return self._finalize_result(
+            CommandNormalizationResult(
+                source=command_source,
+                normalized=NormalizedCommand(
+                    text=translation.text,
+                    target_language=translation.target_language,
                     status="translated",
-                    normalized_text=translation.text,
+                    translated_span_count=1,
                     translation_family=translation.translation_family,
                     translation_provider=translation.translation_provider,
                     translation_model_name=translation.model_name,
-                )
-            ],
-        )
-
-    def _normalize_command_by_spans(
-        self,
-        text: str,
-        *,
-        modality: str,
-        fallback_language: str | None,
-        target_language: str,
-    ) -> CommandNormalizationResult:
-        analyzed_spans = analyze_text_language_spans(text)
-        command_spans: list[CommandSpan] = []
-        normalized_parts: list[str] = []
-        translated_count = 0
-        preserved_count = 0
-        translation_seconds = 0.0
-        translatable_span_count = 0
-        untranslated_span_count = 0
-
-        for span in analyzed_spans:
-            if span.kind == "literal":
-                command_spans.append(
+                    translation_inference_seconds=translation.inference_seconds,
+                ),
+                spans=[
                     CommandSpan(
-                        text=span.text,
-                        kind="literal",
-                        language_source="literal",
-                        status="literal",
-                        normalized_text=span.text,
+                        text=source_text,
+                        kind="text",
+                        language=resolution.language,
+                        language_source=resolution.source,
+                        status="translated",
+                        normalized_text=translation.text,
+                        translation_family=translation.translation_family,
+                        translation_provider=translation.translation_provider,
+                        translation_model_name=translation.model_name,
                     )
-                )
-                normalized_parts.append(span.text)
-                continue
-
-            translation_candidates = self._iter_span_language_candidates(
-                span_language=span.language,
-                span_text=span.text,
-                target_language=target_language,
+                ],
             )
-            if not translation_candidates:
-                command_spans.append(
-                    CommandSpan(
-                        text=span.text,
-                        kind="text",
-                        language=None,
-                        language_source=span.language_source,
-                        status="preserved",
-                        normalized_text=span.text,
-                    )
-                )
-                normalized_parts.append(span.text)
-                preserved_count += 1
-                continue
-
-            if translation_candidates[0][0] == target_language:
-                command_spans.append(
-                    CommandSpan(
-                        text=span.text,
-                        kind="text",
-                        language=translation_candidates[0][0],
-                        language_source=translation_candidates[0][1],
-                        status="kept",
-                        normalized_text=span.text,
-                    )
-                )
-                normalized_parts.append(span.text)
-                preserved_count += 1
-                continue
-
-            translatable_span_count += 1
-            translation = None
-            selected_language = None
-            selected_language_source = span.language_source
-            for candidate_language, candidate_source in translation_candidates:
-                if candidate_language == target_language:
-                    continue
-                try:
-                    translation = self.translation_router.translate(
-                        span.text.strip(),
-                        source_language=candidate_language,
-                        target_language=target_language,
-                    )
-                except RuntimeError:
-                    continue
-                selected_language = candidate_language
-                selected_language_source = candidate_source
-                break
-
-            if translation is None or selected_language is None:
-                untranslated_span_count += 1
-                command_spans.append(
-                    CommandSpan(
-                        text=span.text,
-                        kind="text",
-                        language=translation_candidates[0][0],
-                        language_source=translation_candidates[0][1],
-                        status="preserved",
-                        normalized_text=span.text,
-                    )
-                )
-                normalized_parts.append(span.text)
-                preserved_count += 1
-                continue
-
-            normalized_text = _restore_surrounding_whitespace(span.text, translation.text)
-            command_spans.append(
-                CommandSpan(
-                    text=span.text,
-                    kind="text",
-                    language=selected_language,
-                    language_source=selected_language_source,
-                    status="translated",
-                    normalized_text=normalized_text,
-                    translation_family=translation.translation_family,
-                    translation_provider=translation.translation_provider,
-                    translation_model_name=translation.model_name,
-                )
-            )
-            normalized_parts.append(normalized_text)
-            translated_count += 1
-            translation_seconds += translation.inference_seconds
-
-        normalized_text = "".join(normalized_parts).strip() or text
-        first_translated_span = next(
-            (span for span in command_spans if span.status == "translated"),
-            None,
-        )
-        status, message = _summarize_partial_normalization(
-            translated_count=translated_count,
-            preserved_count=preserved_count,
-            translatable_span_count=translatable_span_count,
-            untranslated_span_count=untranslated_span_count,
-        )
-        return CommandNormalizationResult(
-            source=CommandSource(
-                text=text,
-                modality=modality,
-                language=None,
-                language_source="segmented",
-            ),
-            normalized=NormalizedCommand(
-                text=normalized_text,
-                target_language=target_language,
-                status=status,
-                message=message,
-                translated_span_count=translated_count,
-                preserved_span_count=preserved_count,
-                translation_family=(
-                    first_translated_span.translation_family
-                    if first_translated_span is not None
-                    else None
-                ),
-                translation_provider=(
-                    first_translated_span.translation_provider
-                    if first_translated_span is not None
-                    else None
-                ),
-                translation_model_name=(
-                    first_translated_span.translation_model_name
-                    if first_translated_span is not None
-                    else None
-                ),
-                translation_inference_seconds=translation_seconds or None,
-            ),
-            spans=command_spans,
         )
 
     def build_error_result(
@@ -374,114 +272,101 @@ class CommandNormalizationService:
     ) -> CommandNormalizationResult:
         target_language = normalize_language_code(self.settings.translation.target_language) or "en"
         default_route = self.translation_router.default_route.descriptor
-        return CommandNormalizationResult(
-            source=CommandSource(
-                text=text,
-                modality=modality,
-                language=normalize_language_code(language),
-                language_source=language_source,
-            ),
-            normalized=NormalizedCommand(
-                text=normalized_text,
-                target_language=target_language,
-                status="error",
-                message=message,
-                translation_family=default_route.family,
-                translation_provider=default_route.provider,
-                translation_model_name=default_route.model_name,
-            ),
-            spans=[
-                CommandSpan(
+        return self._finalize_result(
+            CommandNormalizationResult(
+                source=CommandSource(
                     text=text,
-                    kind="text",
+                    modality=modality,
                     language=normalize_language_code(language),
                     language_source=language_source,
+                ),
+                normalized=NormalizedCommand(
+                    text=normalized_text,
+                    target_language=target_language,
                     status="error",
-                    normalized_text=normalized_text,
+                    message=message,
                     translation_family=default_route.family,
                     translation_provider=default_route.provider,
                     translation_model_name=default_route.model_name,
-                )
-            ],
+                ),
+                spans=[
+                    CommandSpan(
+                        text=text,
+                        kind="text",
+                        language=normalize_language_code(language),
+                        language_source=language_source,
+                        status="error",
+                        normalized_text=normalized_text,
+                        translation_family=default_route.family,
+                        translation_provider=default_route.provider,
+                        translation_model_name=default_route.model_name,
+                    )
+                ],
+            )
         )
 
-    def _iter_span_language_candidates(
-        self,
-        *,
-        span_language: str | None,
-        span_text: str,
-        target_language: str,
-    ) -> list[tuple[str, str]]:
-        candidates: list[tuple[str, str]] = []
-        seen: set[str] = set()
-
-        def add(language: str | None, source: str) -> None:
-            normalized_language = normalize_language_code(language)
-            if normalized_language is None or normalized_language in seen:
-                return
-            candidates.append((normalized_language, source))
-            seen.add(normalized_language)
-
-        add(span_language, "detected")
-
-        if self.translation_router.has_wildcard_route(target_language=target_language):
-            return candidates
-
-        script_matches = self._guess_route_languages_for_script(
-            span_text,
-            target_language=target_language,
+    def _finalize_result(self, result: CommandNormalizationResult) -> CommandNormalizationResult:
+        cleaned_normalized_text = clean_command_text(result.normalized.text)
+        pcs_result = self._apply_pcs(cleaned_normalized_text, result=result)
+        normalized = result.normalized.model_copy(
+            update={
+                "text": pcs_result.text,
+                "pcs_status": pcs_result.status,
+                "pcs_message": pcs_result.message,
+                "pcs_family": pcs_result.pcs_family,
+                "pcs_provider": pcs_result.pcs_provider,
+                "pcs_model_name": pcs_result.pcs_model_name,
+                "pcs_inference_seconds": pcs_result.inference_seconds,
+            }
         )
-        if len(script_matches) == 1:
-            add(script_matches[0], "script_guess")
+        return result.model_copy(update={"normalized": normalized})
 
-        return candidates
-
-    def _guess_route_languages_for_script(
+    def _apply_pcs(
         self,
         text: str,
         *,
-        target_language: str,
-    ) -> list[str]:
-        script = detect_text_script(text)
-        if script not in {"latin", "cyrillic"}:
-            return []
+        result: CommandNormalizationResult,
+    ) -> PCSNormalizationResult:
+        if not text:
+            return PCSNormalizationResult(
+                text="",
+                status="skipped",
+                message="Nothing to post-process.",
+            )
+        if not self.settings.pcs.enabled or self.pcs_engine is None:
+            return PCSNormalizationResult(
+                text=text,
+                status="disabled",
+                message="PCS post-processing is disabled.",
+            )
+        if not self._should_apply_pcs(result):
+            return PCSNormalizationResult(
+                text=text,
+                status="skipped",
+                message="PCS post-processing is only applied to English-ready commands.",
+            )
+        try:
+            return self.pcs_engine.normalize_text(text)
+        except RuntimeError as error:
+            logger.warning("PCS post-processing skipped: %s", error)
+            return PCSNormalizationResult(
+                text=text,
+                status="error",
+                message=str(error),
+                pcs_family=self.settings.pcs.family,
+                pcs_provider=self.settings.pcs.provider,
+                pcs_model_name=self.settings.pcs.model_name,
+            )
 
-        script_map = {
-            "latin": {
-                "en",
-                "de",
-                "es",
-                "fr",
-                "it",
-                "nl",
-                "no",
-                "da",
-                "sv",
-                "fi",
-                "pt",
-                "pl",
-                "cs",
-                "sk",
-                "sl",
-                "hr",
-                "ro",
-                "hu",
-                "tr",
-            },
-            "cyrillic": {
-                "ru",
-                "uk",
-                "bg",
-                "sr",
-                "mk",
-                "be",
-            },
-        }
-        supported_languages = self.translation_router.supported_source_languages(
-            target_language=target_language
-        )
-        return sorted(
-            language for language in supported_languages if language in script_map[script]
+    def _should_apply_pcs(self, result: CommandNormalizationResult) -> bool:
+        target_language = result.normalized.target_language
+        if target_language != "en":
+            return False
+        if result.normalized.status == "translated":
+            return True
+        return (
+            result.normalized.status in {"skipped", "disabled"}
+            and result.source.language == target_language
         )
 
     def _should_prefer_span_normalization(self, text: str) -> bool:
@@ -493,25 +378,3 @@ class CommandNormalizationService:
         scripts.discard("other")
         scripts.discard("mixed")
         return len(scripts) > 1
-
-
-def _restore_surrounding_whitespace(source_text: str, translated_text: str) -> str:
-    leading = source_text[: len(source_text) - len(source_text.lstrip())]
-    trailing = source_text[len(source_text.rstrip()) :]
-    return f"{leading}{translated_text.strip()}{trailing}"
-
-
-def _summarize_partial_normalization(
-    *,
-    translated_count: int,
-    preserved_count: int,
-    translatable_span_count: int,
-    untranslated_span_count: int,
-) -> tuple[str, str | None]:
-    if translated_count > 0 and untranslated_span_count == 0 and preserved_count == 0:
-        return "translated", "Translated command span by span."
-    if translated_count > 0:
-        return "partial", "Partially normalized command; unsupported spans were preserved."
-    if translatable_span_count == 0 and preserved_count > 0:
-        return "skipped", "No translatable spans were detected."
-    return "error", "No supported spans could be normalized."

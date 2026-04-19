@@ -6,8 +6,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from core.audio import ensure_wav_path
+from schemas.command_run import CommandMetadata
 from schemas.config import AppSettings
-from schemas.transcription import RunMetadata
 from services.run_store import RunArtifactStore
 
 
@@ -71,5 +71,5 @@ class RunService:
 
         raise FileNotFoundError("No input.wav found in any existing run directory.")
 
-    def load_metadata(self, run_dir: str | Path) -> RunMetadata:
+    def load_metadata(self, run_dir: str | Path) -> CommandMetadata:
         return self.run_store.load_metadata(run_dir)

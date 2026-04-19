@@ -5,17 +5,25 @@ from collections.abc import Callable
 
 from rich.console import Console
 
-from schemas.config import AppSettings, ASRSettings, TranslationRouteSettings, TranslationSettings
+from schemas.config import (
+    AppSettings,
+    ASRSettings,
+    PCSSettings,
+    TranslationRouteSettings,
+    TranslationSettings,
+)
 from schemas.model import ModelDescriptor, ModelRequest
 from schemas.runtime import ModelPreparationResult, PipelinePreparationResult
 from services.asr_assets import FasterWhisperAssetPreparer
+from services.pcs_assets import TransformersPCSAssetPreparer
 from services.translation_assets import TransformersTranslationAssetPreparer
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_TASKS = ("asr", "translation")
+SUPPORTED_TASKS = ("asr", "translation", "pcs")
 SUPPORTED_ASR_FAMILIES = ("whisper",)
 SUPPORTED_TRANSLATION_FAMILIES = ("m2m100", "opus_mt")
+SUPPORTED_PCS_FAMILIES = ("punctuation",)
 
 
 def infer_opus_mt_source_language(model_name: str) -> str | None:
@@ -180,6 +188,35 @@ def build_translation_route_requests(
     return requests
 
 
+def build_pcs_model_descriptor(
+    settings: AppSettings,
+    *,
+    family: str | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+    local_files_only: bool | None = None,
+) -> ModelDescriptor:
+    resolved_settings = resolve_pcs_settings(
+        settings,
+        family=family,
+        provider=provider,
+        model_name=model_name,
+        local_files_only=local_files_only,
+    )
+    return ModelDescriptor(
+        task="pcs",
+        family=resolved_settings.family,
+        provider=resolved_settings.provider,
+        model_name=resolved_settings.model_name,
+        model_path=resolved_settings.model_path,
+        download_root=resolved_settings.download_root,
+        local_files_only=resolved_settings.local_files_only,
+        device=resolved_settings.device,
+        cpu_threads=resolved_settings.cpu_threads,
+        max_length=resolved_settings.max_length,
+    )
+
+
 def build_asr_model_request(
     settings: AppSettings,
     *,
@@ -220,6 +257,27 @@ def build_translation_model_request(
             model_name=model_name,
             source_language=source_language,
             target_language=target_language,
+            local_files_only=local_files_only,
+        ),
+        force_download=force_download,
+    )
+
+
+def build_pcs_model_request(
+    settings: AppSettings,
+    *,
+    family: str | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+    local_files_only: bool | None = None,
+    force_download: bool = False,
+) -> ModelRequest:
+    return ModelRequest(
+        descriptor=build_pcs_model_descriptor(
+            settings,
+            family=family,
+            provider=provider,
+            model_name=model_name,
             local_files_only=local_files_only,
         ),
         force_download=force_download,
@@ -296,6 +354,34 @@ def resolve_translation_settings(
     return resolved_settings
 
 
+def resolve_pcs_settings(
+    settings: AppSettings,
+    *,
+    family: str | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+    local_files_only: bool | None = None,
+) -> PCSSettings:
+    resolved_family = (family or settings.pcs.family).lower()
+    resolved_provider = (provider or settings.pcs.provider).lower()
+    if resolved_family not in SUPPORTED_PCS_FAMILIES:
+        raise ValueError(f"Unsupported PCS family: {resolved_family}")
+    if resolved_provider not in {"transformers", "onnx"}:
+        raise ValueError(
+            f"Unsupported PCS provider: {resolved_provider}. Expected `transformers` or `onnx`."
+        )
+
+    update: dict[str, object] = {
+        "family": resolved_family,
+        "provider": resolved_provider,
+    }
+    if model_name is not None:
+        update["model_name"] = model_name
+    if local_files_only is not None:
+        update["local_files_only"] = local_files_only
+    return settings.pcs.model_copy(update=update)
+
+
 def _build_translation_descriptor_from_route(route: TranslationRouteSettings) -> ModelDescriptor:
     source_language = route.source_language
     if route.family == "opus_mt" and source_language is None:
@@ -344,7 +430,26 @@ def prepare_model(
         preparer = FasterWhisperAssetPreparer(asr_settings, console=console)
         return preparer.prepare(force_download=request.force_download)
 
-    translation_settings = TranslationSettings.model_validate(
+    if resolved_task == "translation":
+        translation_settings = TranslationSettings.model_validate(
+            {
+                "family": descriptor.family,
+                "provider": descriptor.provider,
+                "model_name": descriptor.model_name,
+                "model_path": descriptor.model_path,
+                "download_root": descriptor.download_root,
+                "local_files_only": descriptor.local_files_only,
+                "source_language": descriptor.source_language,
+                "target_language": descriptor.target_language or "en",
+                "device": descriptor.device or "auto",
+                "cpu_threads": descriptor.cpu_threads or 0,
+                "max_length": descriptor.max_length or 256,
+            }
+        )
+        preparer = TransformersTranslationAssetPreparer(translation_settings, console=console)
+        return preparer.prepare(force_download=request.force_download)
+
+    pcs_settings = PCSSettings.model_validate(
         {
             "family": descriptor.family,
             "provider": descriptor.provider,
@@ -352,14 +457,12 @@ def prepare_model(
             "model_path": descriptor.model_path,
             "download_root": descriptor.download_root,
             "local_files_only": descriptor.local_files_only,
-            "source_language": descriptor.source_language,
-            "target_language": descriptor.target_language or "en",
             "device": descriptor.device or "auto",
             "cpu_threads": descriptor.cpu_threads or 0,
             "max_length": descriptor.max_length or 256,
         }
     )
-    preparer = TransformersTranslationAssetPreparer(translation_settings, console=console)
+    preparer = TransformersPCSAssetPreparer(pcs_settings, console=console)
     return preparer.prepare(force_download=request.force_download)
 
 
@@ -391,6 +494,17 @@ def prepare_configured_models(
                 force_download=force_download,
             )
         )
+    if settings.pcs.enabled:
+        requests.append(
+            build_pcs_model_request(
+                settings,
+                family=settings.pcs.family,
+                provider=settings.pcs.provider,
+                model_name=settings.pcs.model_name,
+                local_files_only=False,
+                force_download=force_download,
+            )
+        )
 
     total_requests = len(requests)
     for index, request in enumerate(requests, start=1):
@@ -401,9 +515,9 @@ def prepare_configured_models(
             component = prepare_model(request, console=console)
         except RuntimeError as error:
             descriptor = request.descriptor
-            if descriptor.task != "translation":
+            if descriptor.task not in {"translation", "pcs"}:
                 raise
-            logger.warning("Skipping translation model preparation: %s", error)
+            logger.warning("Skipping %s model preparation: %s", descriptor.task, error)
             component = build_skipped_preparation_result(
                 task=descriptor.task,
                 family=descriptor.family,

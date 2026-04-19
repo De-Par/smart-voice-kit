@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from schemas.command import CommandNormalizationResult
-from schemas.transcription import RunArtifacts, RunMetadata, TranscriptionRun
+from schemas.command_run import CommandArtifacts, CommandMetadata, CommandRun
 
 
 class RunArtifactStore:
@@ -13,34 +13,23 @@ class RunArtifactStore:
         *,
         run_dir: str | Path,
         audio_path: str | Path,
-    ) -> RunArtifacts:
-        return RunArtifacts.from_run_dir(
+    ) -> CommandArtifacts:
+        return CommandArtifacts.from_run_dir(
             run_dir,
             audio_path=audio_path,
         )
 
-    def load_metadata(self, run_dir: str | Path) -> RunMetadata:
+    def load_metadata(self, run_dir: str | Path) -> CommandMetadata:
         artifacts = self.build_artifacts(run_dir=run_dir, audio_path="")
         metadata_path = Path(artifacts.metadata_path)
         if not metadata_path.exists():
             raise FileNotFoundError(f"Run metadata not found: {metadata_path}")
-        return RunMetadata.model_validate(json.loads(metadata_path.read_text(encoding="utf-8")))
-
-    def write_transcript(self, artifacts: RunArtifacts, text: str) -> None:
-        self._ensure_run_dir(artifacts)
-        Path(artifacts.transcript_path).write_text(text + "\n", encoding="utf-8")
-
-    def write_transcript_en(self, artifacts: RunArtifacts, text: str) -> None:
-        self._ensure_run_dir(artifacts)
-        Path(artifacts.transcript_en_path).write_text(text + "\n", encoding="utf-8")
-
-    def transcript_en_exists(self, artifacts: RunArtifacts) -> bool:
-        return Path(artifacts.transcript_en_path).exists()
+        return CommandMetadata.model_validate(json.loads(metadata_path.read_text(encoding="utf-8")))
 
     def write_command_artifacts(
         self,
         *,
-        artifacts: RunArtifacts,
+        artifacts: CommandArtifacts,
         source_text: str,
         normalized_text: str,
         normalization_result: CommandNormalizationResult,
@@ -57,18 +46,18 @@ class RunArtifactStore:
             encoding="utf-8",
         )
 
-    def write_metadata(self, artifacts: RunArtifacts, metadata: RunMetadata) -> None:
+    def write_metadata(self, artifacts: CommandArtifacts, metadata: CommandMetadata) -> None:
         self._ensure_run_dir(artifacts)
         Path(artifacts.metadata_path).write_text(
             json.dumps(metadata.model_dump(mode="json"), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
-    def build_run(self, artifacts: RunArtifacts, metadata: RunMetadata) -> TranscriptionRun:
-        return TranscriptionRun(
+    def build_run(self, artifacts: CommandArtifacts, metadata: CommandMetadata) -> CommandRun:
+        return CommandRun(
             artifacts=artifacts,
             metadata=metadata,
         )
 
-    def _ensure_run_dir(self, artifacts: RunArtifacts) -> None:
+    def _ensure_run_dir(self, artifacts: CommandArtifacts) -> None:
         Path(artifacts.run_dir).mkdir(parents=True, exist_ok=True)
