@@ -9,6 +9,7 @@ from schemas.config import (
     AppSettings,
     ASRSettings,
     StorageSettings,
+    TranslationRouteSettings,
     TranslationSettings,
 )
 
@@ -17,6 +18,7 @@ ComponentSettingsT = TypeVar(
     "ComponentSettingsT",
     ASRSettings,
     TranslationSettings,
+    TranslationRouteSettings,
 )
 
 
@@ -71,6 +73,9 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
     resolved_storage = _resolve_storage(base_dir, settings.storage)
     resolved_asr_base = _resolve_component_paths(base_dir, settings.asr)
     resolved_translation_base = _resolve_component_paths(base_dir, settings.translation)
+    resolved_route_bases = [
+        _resolve_component_paths(base_dir, route) for route in settings.translation_routes
+    ]
     resolved_asr = resolved_asr_base.model_copy(
         update={
             "download_root": resolved_asr_base.download_root
@@ -87,6 +92,19 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
             )
         }
     )
+    resolved_translation_routes = [
+        route.model_copy(
+            update={
+                "download_root": route.download_root
+                or _default_model_root(
+                    resolved_storage,
+                    "translation",
+                    route.family,
+                )
+            }
+        )
+        for route in resolved_route_bases
+    ]
 
     for directory in (
         resolved_storage.runs_dir,
@@ -94,7 +112,7 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
         resolved_storage.samples_dir,
     ):
         directory.mkdir(parents=True, exist_ok=True)
-    for component in (resolved_asr, resolved_translation):
+    for component in (resolved_asr, resolved_translation, *resolved_translation_routes):
         if component.download_root is not None:
             component.download_root.mkdir(parents=True, exist_ok=True)
 
@@ -103,5 +121,6 @@ def load_settings(config_path: str | Path | None = None) -> AppSettings:
             "storage": resolved_storage,
             "asr": resolved_asr,
             "translation": resolved_translation,
+            "translation_routes": resolved_translation_routes,
         }
     )
