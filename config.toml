@@ -1,129 +1,251 @@
-# Human-readable application name used in UI titles and API metadata
+# iVoice runtime contract:
+# 1. Input arrives either as audio or direct text
+# 2. Audio is transcribed into source text through ASR
+# 3. Source text is normalized toward English through translation routing
+# 4. Optional PCS post-processing restores punctuation, capitalization, and small cleanup
+# 5. The final English command is written to `command.en.txt`
+#
+# All managed model caches live under `data/models/<task>/<family>/...`
+# All per-run artifacts live under `runs/<run_id>/...`
+
+
+# Human-readable application name used by desktop/web clients and API metadata
 app_name = "iVoice"
 
 
 # =============================================================================
-[asr]
+# ASR: audio -> source text
 # =============================================================================
+[asr]
 
-# Speech recognition task family. `whisper` is currently supported
+# Task family
+# Currently supported: `whisper`
 family = "whisper"
 
-# Runtime provider implementation for the selected ASR family
+# Runtime provider for the selected ASR family
+# Currently supported: `faster_whisper`
 provider = "faster_whisper"
 
-# Concrete local model identifier. Common values: `tiny`, `base`, `small`, `medium`, `large-v3`
+# Concrete model identifier
+# Typical values: `tiny`, `base`, `small`, `medium`, `large-v3`
 model_name = "base"
 
-# Optional path to a preconverted local model directory. Leave empty to use the managed cache below
+# Optional path to an already prepared local runtime directory.
+# Leave empty to use the managed cache under `download_root`
 model_path = ""
 
-# Execution device. Typical values: `auto`, `cpu`, `cuda`, `mps`
+# Execution device
+# Common values: `auto`, `cpu`, `cuda`, `mps`
 device = "auto"
 
-# Compute profile for the provider. Common values: `int8`, `int8_float16`, `float16`, `float32`
+# Runtime compute profile used by the ASR provider
+# Typical values: `int8`, `int8_float16`, `float16`, `float32`
 compute_type = "int8"
 
-# Force a normalized language code such as `ru`, `en`, `sv`. Leave empty for auto-detection
+# Optional language override for ASR
+# Use normalized labels such as `ru`, `en`, `sv`
+# Leave empty for provider-side language detection
 language = ""
 
-# Decoder beam size. Higher values may improve accuracy, but they also increase latency
+# Decoder beam size
+# Higher values may improve accuracy but also increase latency
 beam_size = 5
 
-# Maximum CPU threads used by a single transcription job
+# CPU thread limit for a single ASR job
+# `0` keeps the provider default
 cpu_threads = 4
 
-# Number of parallel ASR worker jobs allowed by the runtime
+# Number of parallel ASR worker jobs the runtime may use
 num_workers = 1
 
-# Persistent cache root for prepared ASR models of this task/family
+# Managed local cache for this ASR task/family
 download_root = "data/models/asr/whisper"
 
-# When `true`, ASR only loads already cached local files and never reaches the network
+# When `true`, the ASR runtime never reaches the network and only loads cached files
 local_files_only = true
 
-# When `true`, preload the ASR runtime during app startup instead of the first request
+# When `true`, preload the ASR runtime during startup instead of the first request
 preload_on_startup = false
 
 
 # =============================================================================
-[translation]
+# Translation: source text -> English command
 # =============================================================================
+[translation]
 
-# Enable or disable the translation stage after transcription
+# Enable or disable the translation stage
+# When disabled, source text is passed through unchanged to the next stage
 enabled = true
 
-# Translation task family. Supported values: `m2m100`, `opus_mt`
+# Default translation family
+# Supported: `m2m100`, `opus_mt`
 family = "opus_mt"
 
-# Runtime provider implementation for the selected translation family
+# Runtime provider for translation
+# Currently supported: `transformers`
 provider = "transformers"
 
-# Concrete translation model identifier
+# Concrete default translation model
 # Examples:
 # - `facebook/m2m100_418M`
 # - `Helsinki-NLP/opus-mt-ru-en`
 model_name = "Helsinki-NLP/opus-mt-ru-en"
 
-# Optional path to a fully local translation model directory. Leave empty to use the managed cache below
+# Optional path to a fully local translation model directory
 model_path = ""
 
-# Optional source language override in normalized form (`ru`, `en`, etc). Leave empty for auto/implicit source handling
+# Optional normalized source language override
+# Leave empty to resolve the language from ASR, explicit user input, or detection
 source_language = ""
 
-# Output language for translation. The pipeline expects normalized labels such as `en`
+# Target language for the normalized command
+# The downstream command pipeline currently expects English
 target_language = "en"
 
-# Execution device. Typical values: `auto`, `cpu`, `cuda`, `mps`
+# Execution device
 device = "auto"
 
-# Maximum CPU threads used by PyTorch translation inference. `0` keeps the runtime default
+# CPU thread limit for PyTorch translation inference
+# `0` keeps the runtime default
 cpu_threads = 4
 
-# Maximum generated token length for translated output
+# Maximum generated token length for translation output
 max_length = 256
 
-# Persistent cache root for prepared translation models of this task/family
+# Managed local cache for the default translation model
 download_root = "data/models/translation/opus_mt"
 
-# When `true`, translation only loads already cached local files and never reaches the network
+# When `true`, translation loads only cached files and never reaches the network
 local_files_only = true
 
-# When `true`, preload the translation runtime during app startup instead of the first request
+# When `true`, preload the default translation runtime during startup
+preload_on_startup = false
+
+
+# Additional translation routes used by the command-normalization router
+#
+# Matching order:
+# 1. exact `source_language -> target_language`
+# 2. wildcard multilingual fallback where `source_language = ""`
+#
+# Recommended pattern:
+# - keep fast pair-specific routes first
+# - keep a multilingual fallback last
+
+[[translation_routes]]
+name = "ru-fast-route"
+priority = 10
+family = "opus_mt"
+provider = "transformers"
+model_name = "Helsinki-NLP/opus-mt-ru-en"
+model_path = ""
+source_language = "ru"
+target_language = "en"
+device = "auto"
+cpu_threads = 4
+max_length = 256
+download_root = "data/models/translation/opus_mt"
+local_files_only = true
+preload_on_startup = false
+
+[[translation_routes]]
+name = "multilingual-fallback"
+priority = 100
+family = "m2m100"
+provider = "transformers"
+model_name = "facebook/m2m100_418M"
+model_path = ""
+source_language = ""
+target_language = "en"
+device = "auto"
+cpu_threads = 4
+max_length = 256
+download_root = "data/models/translation/m2m100"
+local_files_only = true
 preload_on_startup = false
 
 
 # =============================================================================
-[storage]
+# PCS: punctuation, capitalization, segmentation
 # =============================================================================
+[pcs]
 
-# Directory with persistent run artifacts: input audio, transcript, translated transcript, metadata
+# Enable or disable English post-processing after translation / normalization
+enabled = true
+
+# PCS task family
+# Currently supported: `punctuation`
+family = "punctuation"
+
+# Runtime provider for PCS
+# Supported: `onnx`, `transformers`
+# The default bundle below is an ONNX/NeMo-style export and should use `onnx`.
+provider = "onnx"
+
+# Concrete PCS model identifier used for punctuation, truecasing, and segmentation
+model_name = "1-800-BAD-CODE/xlm-roberta_punctuation_fullstop_truecase"
+
+# Optional path to a fully local PCS model directory
+model_path = ""
+
+# Execution device
+device = "auto"
+
+# CPU thread limit for PCS inference
+# `0` keeps the runtime default
+cpu_threads = 4
+
+# Maximum model sequence length for PCS inference
+max_length = 256
+
+# Managed local cache for PCS models
+download_root = "data/models/pcs/punctuation"
+
+# When `true`, PCS loads only cached files and never reaches the network
+local_files_only = true
+
+# When `true`, preload PCS during startup
+preload_on_startup = false
+
+
+# =============================================================================
+# Storage
+# =============================================================================
+[storage]
+
+# Root directory for per-run artifacts such as:
+# - `input.wav`
+# - `source.txt`
+# - `command.en.txt`
+# - `command.spans.json`
 runs_dir = "runs"
 
-# Root storage for runtime data such as model caches and other local assets
+# Root directory for managed runtime data, including model caches
 data_dir = "data"
 
-# Optional folder for manually curated sample inputs
+# Optional directory for manually curated demo or reference samples
 samples_dir = "samples"
 
 
 # =============================================================================
-[logging]
+# Logging
 # =============================================================================
+[logging]
 
-# Global application log level
+# Global log level
 level = "INFO"
 
-# Enable Rich formatting for terminal logs and CLI output
+# Enable Rich formatting for terminal output
 rich = true
 
 
 # =============================================================================
-[api]
+# API
 # =============================================================================
+[api]
 
-# HTTP bind host for the FastAPI application
+# FastAPI bind host
 host = "127.0.0.1"
 
-# HTTP bind port for the FastAPI application
+# FastAPI bind port
 port = 8000
