@@ -20,8 +20,17 @@ asr = [
     "faster-whisper>=1.1.0",
 ]
 translation = [
+    "lingua-language-detector>=2.0.2",
     "langdetect>=1.0.9",
     "sacremoses>=0.1.1",
+    "sentencepiece>=0.2.0",
+    "torch>=2.3.0",
+    "transformers>=4.46.0",
+]
+pcs = [
+    "ftfy>=6.3.1",
+    "onnxruntime>=1.19.0",
+    "punctuators",
     "sentencepiece>=0.2.0",
     "torch>=2.3.0",
     "transformers>=4.46.0",
